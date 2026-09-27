@@ -15,6 +15,8 @@ permissions: {}
 jobs:
   sync:
     name: sync
+    # Publishes to Pollen's Space; forks mirror to their own Space with droid-sync-space.yml instead.
+    if: ${{ github.repository == 'pollen-robotics/reachy_mini_conversation_app' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
