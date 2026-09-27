@@ -120,3 +120,12 @@ def test_launch_helper_is_detached(monkeypatch: pytest.MonkeyPatch) -> None:
     command = popen.call_args.args[0]
     assert command[1:3] == ["-m", "reachy_mini_conversation_app.droid.update_helper"]
     assert "--data-dir" in command and popen.call_args.kwargs["start_new_session"] is True
+
+
+def test_stale_beacon_from_old_version_does_not_count(tmp_path: Path, fast_helper: list[str]) -> None:
+    """Regression: a beacon left by the previous version must not make a broken new version look healthy."""
+    write_health_beacon(tmp_path)
+    daemon = _FakeDaemon(tmp_path, {"old-sha"}, fast_helper)
+
+    assert helper_mod.run_update(_args(tmp_path), daemon) is False  # type: ignore[arg-type]
+    assert fast_helper == ["new-sha", "old-sha"]
