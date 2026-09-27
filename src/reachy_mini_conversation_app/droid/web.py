@@ -2,6 +2,7 @@
 
 from typing import Any
 from pathlib import Path
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -28,6 +29,32 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "face_enrolled": runtime.face_registry.owner_enrolled(),
         "notifications": notifications_enabled(runtime.settings),
         "known_faces": [person.name for person in runtime.face_registry.people()],
+        "mood": runtime.mood() if identity.activated else "",
+    }
+
+
+def droid_memories(runtime: DroidRuntime) -> dict[str, Any]:
+    """Return what the droid remembers, for the owner to review."""
+    memory = runtime.memory
+    return {
+        "facts": [{"id": fact.id, "subject": fact.subject, "text": fact.text} for fact in memory.facts(limit=200)],
+        "episodes": [
+            {
+                "id": episode.id,
+                "when": f"{datetime.fromtimestamp(episode.ended_at):%Y-%m-%d %H:%M}",
+                "text": episode.summary,
+            }
+            for episode in memory.episodes(limit=20)
+        ],
+        "reminders": [
+            {
+                "id": reminder.id,
+                "when": f"{datetime.fromtimestamp(reminder.due_at):%Y-%m-%d %H:%M}",
+                "text": reminder.text,
+            }
+            for reminder in memory.pending_reminders()
+        ],
+        "diary": [{"day": day, "text": memory.diary(day) or ""} for day in memory.diary_days(limit=7)],
     }
 
 
@@ -67,3 +94,19 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
         if not runtime.submit(runtime.factory_reset()):
             raise HTTPException(status_code=409, detail="the droid runtime is not running yet")
         return {"status": "Factory reset started. Activation will begin again."}
+
+    @app.get("/droid/api/memories")
+    def _memories() -> dict[str, Any]:
+        return droid_memories(runtime)
+
+    @app.post("/droid/api/forget-fact/{fact_id}")
+    def _forget_fact(fact_id: int) -> dict[str, Any]:
+        if not runtime.memory.delete_facts([fact_id]):
+            raise HTTPException(status_code=404, detail="No such fact")
+        return {"status": "Fact deleted."}
+
+    @app.post("/droid/api/forget-episode/{episode_id}")
+    def _forget_episode(episode_id: int) -> dict[str, Any]:
+        if not runtime.memory.delete_episodes([episode_id]):
+            raise HTTPException(status_code=404, detail="No such session")
+        return {"status": "Session deleted."}

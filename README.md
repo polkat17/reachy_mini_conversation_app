@@ -198,6 +198,10 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `activation_step` | Drive the droid's first-boot activation protocol one stage at a time. | `droid` profile only. |
 | `enroll_face` | Learn the owner's or a guest's face (embeddings only, never pictures). | `droid` profile only. Requires the camera. Downloads the SFace model from Hugging Face on first use. |
 | `who_is_here` | Report who the droid recognises in view. | `droid` profile only. Requires the camera. |
+| `memorize` / `recall` / `list_memories` | Save a durable fact; search facts and past sessions by meaning; list facts. | `droid` profile only. SQLite in `<instance>/droid/memory.db`; MiniLM embeddings on ONNX Runtime (downloaded from Hugging Face on first use). |
+| `forget_memory` | Find memories, read them back, and delete only the confirmed ones. | `droid` profile only. |
+| `reminder` | Set, list or cancel reminders and timers. | `droid` profile only. |
+| `read_diary` | Read the droid's nightly diary entry. | `droid` profile only. |
 | `camera` | Capture the latest camera frame and analyze it with the selected realtime backend. | Core install only. Requires the camera (disable with `--no-camera`). |
 | `idle_do_nothing` | Explicitly remain idle during an idle turn. Not intended for normal conversation turns. | Core install only. |
 | `move_head` | Queue a head pose change (left/right/up/down/front). | Core install only. |
@@ -436,6 +440,15 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
   politely without sharing the owner's memories. Recognition is for convenience, not security.
 - **Wake phrase**: spotted offline by Vosk with a grammar limited to the chosen phrase. The small English model
   (about 40 MB) downloads on first use into `<instance>/droid/models/`.
+- **Memory**: facts, session summaries, reminders and a nightly diary live in `<instance>/droid/memory.db`
+  (text only). Each session starts with the droid's mood, upcoming reminders, the last three sessions and the
+  key facts (about 1,500 tokens); everything else is reached through `recall`. When the droid goes dormant (or
+  after 60 turns) the transcript is summarised by `DROID_SUMMARY_MODEL` into an episode and durable facts, with
+  near-duplicates updated instead of added. Without a reachable model it keeps a plain excerpt. Memory tools
+  refuse to share anything while only strangers are in view, and nothing is stored without memory consent.
+- **Daily rhythm**: a morning briefing on the first sighting of the owner before noon (weather, today's
+  reminders, a callback to the last session), a mood that drifts with how often it sees its owner, reminders
+  that wake it and fall back to a phone notification, and a diary entry written at 23:00.
 - **Control page**: `http://<robot>:7860/droid` shows the droid's state, wake and sleep buttons, known faces
   (with "forget"), and a factory reset that restarts activation.
 
@@ -444,6 +457,7 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 | `DROID_DORMANT_AFTER_MINUTES` | Minutes without anyone talking or in view before going dormant. Default `20`; `0` disables. |
 | `DROID_AUTOSTART` | Register this app as the daemon's startup app. Default on. |
 | `DROID_IDLE_LIFE` | Idle behaviours while nobody is talking. Default on. |
+| `DROID_SUMMARY_MODEL` | Hugging Face model for session summaries and the diary. Default `Qwen/Qwen2.5-7B-Instruct`; uses `HF_TOKEN`. |
 | `DROID_NTFY_TOPIC` / `DROID_NTFY_SERVER` | Phone notifications through [ntfy](https://ntfy.sh): subscribe to the same private topic in the ntfy app. |
 
 ## Contributing

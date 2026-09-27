@@ -10,6 +10,7 @@
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
   main { max-width: 720px; margin: 0 auto; padding: 16px; }
   h1 { font-size: 22px; letter-spacing: 0.08em; margin: 8px 0 16px; }
+  h3 { font-size: 13px; color: var(--muted); margin: 12px 0 2px; }
   h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 10px; }
   section { background: var(--panel); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
@@ -44,6 +45,15 @@
     <h2>Known faces</h2>
     <p>Only face embeddings are stored, never pictures.</p>
     <ul id="faces"></ul>
+  </section>
+
+  <section>
+    <h2>Memories</h2>
+    <p>Everything the droid keeps is text. Delete anything you do not want it to remember.</p>
+    <h3>Facts</h3><ul id="facts"></ul>
+    <h3>Recent sessions</h3><ul id="episodes"></ul>
+    <h3>Reminders</h3><ul id="reminders"></ul>
+    <h3>Diary</h3><ul id="diary"></ul>
   </section>
 
   <section>
@@ -114,6 +124,37 @@
     }
   }
 
+  function renderList(id, items, format, deletePath) {
+    const list = document.getElementById(id);
+    list.replaceChildren();
+    if (!items.length) list.append(Object.assign(document.createElement("li"), { textContent: "Nothing yet." }));
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.append(format(item) + " ");
+      if (deletePath) {
+        const button = document.createElement("button");
+        button.className = "secondary";
+        button.textContent = "Delete";
+        button.dataset.post = deletePath(item);
+        button.dataset.confirm = "Delete this memory?";
+        li.append(button);
+      }
+      list.append(li);
+    }
+  }
+
+  async function refreshMemories() {
+    try {
+      const memories = await (await fetch("/droid/api/memories")).json();
+      renderList("facts", memories.facts, (f) => (f.subject ? `${f.subject}: ` : "") + f.text, (f) => `/droid/api/forget-fact/${f.id}`);
+      renderList("episodes", memories.episodes, (e) => `${e.when}: ${e.text}`, (e) => `/droid/api/forget-episode/${e.id}`);
+      renderList("reminders", memories.reminders, (r) => `${r.when}: ${r.text}`);
+      renderList("diary", memories.diary, (d) => `${d.day}: ${d.text}`);
+    } catch (error) {
+      show(`Cannot load memories: ${error.message}`);
+    }
+  }
+
   async function refresh() {
     try {
       const response = await fetch("/droid/api/status");
@@ -133,13 +174,16 @@
       const result = await call(button.dataset.post);
       show(result.status || "Done.");
       refresh();
+      refreshMemories();
     } catch (error) {
       show(error.message);
     }
   });
 
   refresh();
+  refreshMemories();
   setInterval(refresh, 3000);
+  setInterval(refreshMemories, 30000);
 </script>
 </body>
 </html>

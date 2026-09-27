@@ -13,11 +13,20 @@ from collections.abc import Callable, Awaitable, Coroutine
 import numpy as np
 from numpy.typing import NDArray
 
+from reachy_mini_conversation_app.memory import list_memory_facts
 from reachy_mini_conversation_app.streaming import AudioArray
 from reachy_mini_conversation_app.tools.beep import Beep
 from reachy_mini_conversation_app.droid.audio import LoudnessTrigger, to_mono_16k
 from reachy_mini_conversation_app.droid.faces import FaceRegistry
 from reachy_mini_conversation_app.droid.emotes import EmoteGuard
+from reachy_mini_conversation_app.droid.notify import send_notification
+from reachy_mini_conversation_app.droid.context import OWNER_LAST_SEEN_KEY, mood_for, open_memory
+from reachy_mini_conversation_app.droid.journal import (
+    CHECKPOINT_TURNS,
+    SessionJournal,
+    summarize_session,
+    write_diary_entry,
+)
 from reachy_mini_conversation_app.droid.identity import Identity, load_identity, save_identity, droid_data_dir
 from reachy_mini_conversation_app.droid.presence import STRANGER, PresenceEvent, PresenceSensor
 from reachy_mini_conversation_app.droid.settings import DroidSettings
@@ -46,6 +55,7 @@ _GOODBYE_GRACE_S = 4.0
 _AUDIO_QUEUE_FRAMES = 200
 _PRESENCE_INTERVAL_AWAKE_S = 1.0
 _PRESENCE_INTERVAL_DORMANT_S = 1.5
+_REMINDER_SESSION_GRACE_S = 60.0
 
 
 class DroidRuntime:
@@ -65,6 +75,10 @@ class DroidRuntime:
         self._wake_test_active = False
         self._wake_test_hits = 0
         self._last_break_nudge_at = time.monotonic()
+        self.memory = open_memory(instance_path)
+        self.journal = SessionJournal()
+        self._checkpointing = False
+        self._import_legacy_facts()
         self.handler: ConversationHandler | None = None
         self.stream: "LocalStream | None" = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -83,10 +97,11 @@ class DroidRuntime:
         self._event_listeners: list[Callable[[ConversationEvent], None]] = [
             self._emote_guard.on_event,
             self._on_session_started,
+            self._record_transcript,
         ]
-        self.on_dormant: list[LifecycleHook] = []
+        self.on_dormant: list[LifecycleHook] = [self._checkpoint_on_dormant]
         self.on_wake: list[LifecycleHook] = []
-        self.on_factory_reset: list[LifecycleHook] = []
+        self.on_factory_reset: list[LifecycleHook] = [self._wipe_memory]
 
     # ---- wiring -------------------------------------------------------------
 
@@ -344,8 +359,12 @@ class DroidRuntime:
         return [] if self.presence is None else self.presence.tracker.present()
 
     async def tick(self) -> None:
-        """Run once per second: dormancy timeout and idle life."""
-        if self.stream is None or self.is_dormant:
+        """Run once per second: reminders, dormancy timeout, briefings, diary and idle life."""
+        if self.stream is None:
+            return
+        if self.is_dormant:
+            if self.memory.due_reminders(time.time()):
+                await self.wake("reminder")
             return
         idle_s = self.seconds_since_activity()
         dormant_after_s = self.settings.dormant_after_minutes * 60.0
@@ -353,6 +372,9 @@ class DroidRuntime:
             self._spawn(self.enter_dormant("inactivity"))
             return
         await self._maybe_nudge_break()
+        await self._deliver_due_reminders()
+        await self._maybe_morning_briefing()
+        await self._maybe_write_diary()
         if not self.settings.idle_life or not self.deps.movement_manager.is_idle():
             return
         action = self._idle_life.next_action(idle_s, time.monotonic(), self.identity.protocols, datetime.now())
@@ -384,6 +406,8 @@ class DroidRuntime:
         self.submit(self._react_to_presence(event))
 
     async def _react_to_presence(self, event: PresenceEvent) -> None:
+        if event.is_owner:
+            self.memory.set_state(OWNER_LAST_SEEN_KEY, str(time.time()))
         if not self.identity.activated:
             return
         if self.is_dormant:
@@ -470,8 +494,122 @@ class DroidRuntime:
         await self._run_hooks(self.on_factory_reset, "factory_reset")
         self.face_registry.clear()
         self.activation.reset()
+        self.journal.take()
         self.identity = Identity()
         self.save_identity()
         self.wake_spotter.set_phrase("")
         if self.stream is not None:
             await self.stream.request_backend_restart("droid factory reset")
+
+    # ---- memory ------------------------------------------------------------------
+
+    def _import_legacy_facts(self) -> None:
+        # One-time import of facts saved by the app's generic remember tool before the droid existed.
+        if self.memory.get_state("legacy_imported"):
+            return
+        legacy = list_memory_facts(self.instance_path)
+        for fact in legacy:
+            self.memory.remember(fact.text)
+        self.memory.set_state("legacy_imported", "1")
+        if legacy:
+            logger.info("Imported %d legacy memory facts", len(legacy))
+
+    def memory_access_allowed(self) -> tuple[bool, str]:
+        """Return whether memories may be shared now: not when only non-owners are in view."""
+        in_view = self.people_in_view()
+        if not in_view or self.owner_in_view():
+            return True, ""
+        return False, f"{self.identity.owner_name} is not in view ({', '.join(in_view)} is), so memories stay private"
+
+    def _record_transcript(self, event: ConversationEvent) -> None:
+        if event.kind == "user_transcript":
+            if self.owner_in_view():
+                self.memory.set_state(OWNER_LAST_SEEN_KEY, str(time.time()))
+            self.journal.add("user", event.text)
+        elif event.kind == "assistant_transcript":
+            self.journal.add("assistant", event.text)
+        else:
+            return
+        if len(self.journal.lines) >= CHECKPOINT_TURNS:
+            self._spawn(self.checkpoint_session("checkpoint"))
+
+    async def _checkpoint_on_dormant(self, reason: str) -> None:
+        await self.checkpoint_session(reason)
+
+    async def checkpoint_session(self, reason: str) -> None:
+        """Summarise the transcript so far into an episode and durable facts."""
+        if self._checkpointing:
+            return
+        started_at, lines = self.journal.take()
+        if len(lines) < 2 or not self.identity.activated or not self.identity.memory_consent:
+            return
+        self._checkpointing = True
+        try:
+            known = [fact.text for fact in self.memory.facts(limit=60)]
+            summary = await asyncio.to_thread(summarize_session, lines, self.identity, known)
+            self.memory.add_episode(started_at, time.time(), summary.summary, summary.mood, summary.tags)
+            for subject, text in summary.facts:
+                self.memory.remember(text, subject)
+            logger.info("Saved session episode (%s) with %d new facts", reason, len(summary.facts))
+        finally:
+            self._checkpointing = False
+
+    async def _wipe_memory(self, reason: str) -> None:
+        self.memory.wipe()
+
+    def mood(self) -> str:
+        """Return today's mood label for the status page."""
+        return mood_for(self.memory, self.identity, time.time()).label
+
+    async def _deliver_due_reminders(self) -> None:
+        now = time.time()
+        connected = self.handler is not None and self.handler._is_connected()
+        for reminder in self.memory.due_reminders(now):
+            # Give a session that is still connecting (e.g. just woken for this reminder) a minute to come up.
+            if not connected and now - reminder.due_at < _REMINDER_SESSION_GRACE_S:
+                continue
+            self.memory.mark_delivered(reminder.id)
+            await self.beep("alarm")
+            spoken = await self.say_event(
+                f"[SYSTEM EVENT] Reminder for {self.identity.owner_name}, due now: {reminder.text}. Deliver it in "
+                "one short line."
+            )
+            if not self.owner_in_view() or not spoken:
+                await send_notification(self.settings, reminder.text, title="Reminder", priority="high")
+
+    def _once_per_day(self, key: str) -> bool:
+        today = datetime.now().strftime("%Y-%m-%d")
+        if self.memory.get_state(key) == today:
+            return False
+        self.memory.set_state(key, today)
+        return True
+
+    async def _maybe_morning_briefing(self) -> None:
+        now = datetime.now()
+        if not (self.identity.activated and 5 <= now.hour < 12 and self.owner_in_view()):
+            return
+        if self.seconds_since_activity() < 20 or not self._once_per_day("briefing_day"):
+            return
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        today_reminders = [r.text for r in self.memory.pending_reminders() if r.due_at < midnight + 86400]
+        yesterday = self.memory.episodes(limit=1)
+        await self.say_event(
+            f"[SYSTEM EVENT] Morning briefing for {self.identity.owner_name}, first sighting today. In three short "
+            "lines: greet them, give today's weather with your weather tool, then mention "
+            + (f"today's reminders ({'; '.join(today_reminders)})" if today_reminders else "that nothing is scheduled")
+            + (f", and one callback to the last session: {yesterday[0].summary}" if yesterday else "")
+            + "."
+        )
+
+    async def _maybe_write_diary(self) -> None:
+        now = datetime.now()
+        if not self.identity.activated or not self.identity.memory_consent or now.hour < 23:
+            return
+        if not self._once_per_day("diary_day"):
+            return
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        episodes = self.memory.episodes(limit=20, since=midnight)
+        notes = [f"My mood today: {self.mood()}."]
+        entry = await asyncio.to_thread(write_diary_entry, self.identity, episodes, notes)
+        self.memory.write_diary(now.strftime("%Y-%m-%d"), entry)
+        logger.info("Diary entry written for %s", now.strftime("%Y-%m-%d"))

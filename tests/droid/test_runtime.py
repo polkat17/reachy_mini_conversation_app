@@ -1,3 +1,4 @@
+import time
 import asyncio
 import dataclasses
 from unittest.mock import AsyncMock, MagicMock
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from reachy_mini_conversation_app.droid import runtime as runtime_mod
 from reachy_mini_conversation_app.droid.web import register_droid_routes
+from reachy_mini_conversation_app.droid.journal import SessionSummary
 from reachy_mini_conversation_app.droid.runtime import DroidRuntime
 from reachy_mini_conversation_app.droid.presence import PresenceEvent
 from reachy_mini_conversation_app.conversation_handler import ConversationEvent
@@ -173,3 +175,71 @@ async def test_presence_ignored_before_activation(tmp_path, monkeypatch: pytest.
     await runtime._react_to_presence(PresenceEvent("arrived", "stranger", False, away_s=float("inf")))
 
     runtime.say_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_saves_episode_and_facts(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Going dormant turns the transcript into an episode plus durable facts."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.identity.activated = True
+    runtime.identity.memory_consent = True
+    monkeypatch.setattr(
+        runtime_mod,
+        "summarize_session",
+        lambda *_args: SessionSummary(
+            "Talked about Anna's visit.", "happy", ["family"], [("Anna", "Anna is Pasha's sister")]
+        ),
+    )
+    runtime._record_transcript(ConversationEvent("user_transcript", "Anna visits Friday"))
+    runtime._record_transcript(ConversationEvent("assistant_transcript", "Noted."))
+
+    await runtime.enter_dormant("test")
+
+    assert runtime.memory.episodes()[0].summary == "Talked about Anna's visit."
+    assert runtime.memory.facts()[0].text == "Anna is Pasha's sister"
+    assert runtime.journal.lines == []
+
+
+@pytest.mark.asyncio
+async def test_due_reminder_is_spoken_and_sent_when_owner_away(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Due reminders are voiced, marked delivered, and pushed to the phone when the owner is not in view."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    runtime.handler = MagicMock(_is_connected=MagicMock(return_value=True))
+    notify = AsyncMock(return_value=True)
+    monkeypatch.setattr(runtime_mod, "send_notification", notify)
+    runtime.memory.add_reminder(0.0, "Take the pizza out")
+
+    await runtime._deliver_due_reminders()
+    await runtime._deliver_due_reminders()
+
+    runtime.say_event.assert_awaited_once()
+    assert "Take the pizza out" in runtime.say_event.await_args.args[0]
+    notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_due_reminder_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A reminder falling due while dormant wakes the droid."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.stream.is_dormant = True  # type: ignore[union-attr]
+    runtime.wake = AsyncMock()  # type: ignore[method-assign]
+    runtime.memory.add_reminder(0.0, "Stand-up meeting")
+
+    await runtime.tick()
+
+    runtime.wake.assert_awaited_once_with("reminder")
+
+
+@pytest.mark.asyncio
+async def test_due_reminder_waits_for_session(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A just-due reminder waits while the session is still connecting."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    runtime.handler = MagicMock(_is_connected=MagicMock(return_value=False))
+    runtime.memory.add_reminder(time.time() - 5, "Stretch")
+
+    await runtime._deliver_due_reminders()
+
+    runtime.say_event.assert_not_awaited()
+    assert len(runtime.memory.pending_reminders()) == 1
