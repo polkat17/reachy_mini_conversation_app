@@ -194,6 +194,7 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `play_emotion` | Play a recorded emotion clip via Hugging Face datasets. | Core install only. Uses the default open emotions dataset: [`pollen-robotics/reachy-mini-emotions-library`](https://huggingface.co/datasets/pollen-robotics/reachy-mini-emotions-library). |
 | `stop_emotion` | Clear queued emotions. | Core install only. |
 | `beep` | Play a synthesised droid beep sequence (affirmative, negative, happy, sad, curious, alarm, thinking, ...). | Core install only. Enabled in the `droid` profile. |
+| `notify_owner` | Send a push notification to the owner's phone. | Requires `DROID_NTFY_TOPIC` (see [Droid companion](#droid-companion)). |
 | `camera` | Capture the latest camera frame and analyze it with the selected realtime backend. | Core install only. Requires the camera (disable with `--no-camera`). |
 | `idle_do_nothing` | Explicitly remain idle during an idle turn. Not intended for normal conversation turns. | Core install only. |
 | `move_head` | Queue a head pose change (left/right/up/down/front). | Core install only. |
@@ -414,6 +415,21 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
   owner and its behaviour settings. It is hand-editable and injected into every session.
 - **Body language**: every spoken reply comes with an emote. When the model forgets to call `play_emotion` or
   `beep`, the droid picks a fitting emotion itself.
+- **Always on**: the droid never stops itself. `go_to_sleep`, the web page and inactivity put it in *dormant*
+  mode: sleep pose, realtime session closed, but the app keeps listening and watching so it can wake again.
+  Before a wake phrase is set, any sustained speech wakes it. On start it registers itself as the robot's
+  startup app. The wireless robot boots asleep, so after power-on flick an antenna (or wake the robot from the
+  dashboard) and the droid boots.
+- **Idle life**: while nobody is talking it glances around, beeps to itself and now and then makes a remark,
+  silently during quiet hours.
+- **Control page**: `http://<robot>:7860/droid` shows the droid's state and has wake and sleep buttons.
+
+| Variable | Description |
+|----------|-------------|
+| `DROID_DORMANT_AFTER_MINUTES` | Minutes without anyone talking or in view before going dormant. Default `20`; `0` disables. |
+| `DROID_AUTOSTART` | Register this app as the daemon's startup app. Default on. |
+| `DROID_IDLE_LIFE` | Idle behaviours while nobody is talking. Default on. |
+| `DROID_NTFY_TOPIC` / `DROID_NTFY_SERVER` | Phone notifications through [ntfy](https://ntfy.sh): subscribe to the same private topic in the ntfy app. |
 
 ## Contributing
 

@@ -1059,3 +1059,85 @@ def test_rpc_settings_methods() -> None:
     assert isinstance(r2["result"], list)
     assert "spaces" in r3["result"]
     assert "enabled_tools" in r4["result"]
+
+
+@pytest.mark.asyncio
+async def test_dormant_mode_parks_session_until_wake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dormant mode closes the session and keeps it closed until wake() opens a fresh one."""
+    monkeypatch.setattr(config, "HF_REALTIME_CONNECTION_MODE", "local")
+    monkeypatch.setattr(config, "HF_REALTIME_SESSION_URL", None)
+    monkeypatch.setattr(config, "HF_REALTIME_WS_URL", "ws://127.0.0.1:8765/v1/realtime")
+
+    class FakeHandler:
+        def __init__(self) -> None:
+            self.connection: object | None = None
+            self.output_queue: asyncio.Queue[Any] = asyncio.Queue()
+            self.started = asyncio.Event()
+            self.stopped = asyncio.Event()
+
+        async def start_up(self) -> None:
+            self.connection = object()
+            self.started.set()
+            await self.stopped.wait()
+            self.connection = None
+
+        async def shutdown(self) -> None:
+            self.stopped.set()
+
+    handlers: list[FakeHandler] = []
+
+    def handler_factory(_voice: str | None) -> FakeHandler:
+        handler = FakeHandler()
+        handlers.append(handler)
+        return handler
+
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(handler_factory(None), robot, handler_factory=handler_factory)  # type: ignore[arg-type]
+    stream._backend_retry_delay = 0.01
+    startup_task = asyncio.create_task(stream._run_handler_startup_loop())
+    try:
+        await _wait_until(lambda: handlers[0].started.is_set())
+
+        await stream.enter_dormant()
+        await asyncio.sleep(0.05)
+
+        assert stream.is_dormant
+        assert len(handlers) == 1 and handlers[0].connection is None
+        assert stream._backend_connection_status()["backend_connection_state"] == "dormant"
+
+        await stream.wake()
+        await _wait_until(lambda: len(handlers) == 2 and handlers[1].started.is_set())
+
+        assert not stream.is_dormant
+    finally:
+        stream._stop_event.set()
+        await stream._shutdown_active_handler()
+        startup_task.cancel()
+        try:
+            await startup_task
+        except asyncio.CancelledError:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_record_loop_feeds_audio_tap_even_while_dormant() -> None:
+    """The mic tap sees every frame; the handler only gets frames while awake."""
+    frame = np.zeros((160, 2), dtype=np.float32)
+    handler = MagicMock()
+    handler.receive = AsyncMock()
+    stream = LocalStream(handler, MagicMock())
+    stream._robot.media.get_input_audio_samplerate.return_value = 16000
+    tapped: list[int] = []
+
+    def tap(sample_rate: int, _frame: Any) -> None:
+        tapped.append(sample_rate)
+        stream._stop_event.set()
+
+    stream._robot.media.get_audio_sample.return_value = frame
+    stream.audio_tap = tap
+    stream._dormant = True
+
+    await stream.record_loop()
+
+    assert tapped == [16000]
+    handler.receive.assert_not_called()

@@ -253,6 +253,13 @@ def run(
     if effective_settings_app is not None:
         stream_manager._init_settings_ui_if_needed()
 
+    if droid_runtime is not None:
+        from reachy_mini_conversation_app.droid.web import register_droid_routes
+
+        droid_runtime.bind_stream(stream_manager)
+        if effective_settings_app is not None:
+            register_droid_routes(effective_settings_app, droid_runtime)
+
     go_to_sleep_lock = threading.Lock()
     go_to_sleep_requested = threading.Event()
 
@@ -306,7 +313,8 @@ def run(
         finally:
             go_to_sleep_lock.release()
 
-    deps.go_to_sleep = go_to_sleep_and_stop_app
+    # The droid never stops itself: sleeping parks it in dormant mode until the next wake-up.
+    deps.go_to_sleep = go_to_sleep_and_stop_app if droid_runtime is None else droid_runtime.request_dormant
 
     def run_go_to_sleep_tool() -> dict[str, Any]:
         return app_lifecycle.run_go_to_sleep_tool(deps, logger)
@@ -334,7 +342,9 @@ def run(
     robot.enable_wobbling()
 
     timeout_minutes = resolve_app_timeout_minutes()
-    if timeout_minutes is not None:
+    if droid_runtime is not None:
+        droid_runtime.start()
+    elif timeout_minutes is not None:
         _start_inactivity_timeout_thread(timeout_minutes, stream_manager, logger, app_stop_event, run_go_to_sleep_tool)
 
     def poll_stop_event() -> None:
@@ -366,6 +376,8 @@ def run(
     finally:
         if own_ui_server is not None:
             own_ui_server.should_exit = True
+        if droid_runtime is not None:
+            droid_runtime.stop()
 
         # Stop the motion writes without changing the robot's posture. If
         # the shutdown came from the voice go_to_sleep tool the robot is

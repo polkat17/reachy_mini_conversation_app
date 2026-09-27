@@ -13,6 +13,7 @@ from pathlib import Path
 from collections.abc import Callable
 
 import numpy as np
+from numpy.typing import NDArray
 
 from reachy_mini import ReachyMini
 from reachy_mini.io.jsonrpc import JsonRpcError
@@ -126,7 +127,7 @@ class LocalStream:
         self._settings_app: Optional[FastAPI] = settings_app
         self._instance_path: Optional[str] = instance_path
         self._settings_initialized = False
-        self._asyncio_loop = None
+        self._asyncio_loop: asyncio.AbstractEventLoop | None = None
         self._mic_muted = False  # mic starts live; the UI toggles it via the settings API
         self._backend_connection_state = "not_started"
         self._backend_error: str | None = None
@@ -138,6 +139,10 @@ class LocalStream:
         self._last_turn_state: Optional[str] = None
         # Per-role throttle timestamps for conversation.level (orb audio meter).
         self._last_level_emit: dict[str, float] = {}
+        # Dormant: the realtime session is closed but mic, camera and UI keep running.
+        self._dormant = False
+        self._wake_requested = asyncio.Event()
+        self.audio_tap: Callable[[int, NDArray[Any]], None] | None = None
         self._install_handler(handler)
 
     def _install_handler(self, handler: ConversationHandler) -> None:
@@ -298,6 +303,35 @@ class LocalStream:
         self._set_backend_connection_state("connecting")
         self._restart_requested.set()
         await self._shutdown_active_handler()
+
+    @property
+    def asyncio_loop(self) -> asyncio.AbstractEventLoop | None:
+        """Return the loop running the stream, once ``launch`` has started it."""
+        return self._asyncio_loop
+
+    @property
+    def is_dormant(self) -> bool:
+        """Return whether the realtime session is parked until the next wake-up."""
+        return self._dormant
+
+    async def enter_dormant(self) -> None:
+        """Close the realtime session and keep it closed until ``wake`` is called."""
+        if self._dormant:
+            return
+        logger.info("Entering dormant mode")
+        self._dormant = True
+        self._wake_requested.clear()
+        self._set_backend_connection_state("dormant")
+        await self._shutdown_active_handler()
+
+    async def wake(self) -> None:
+        """Leave dormant mode; the startup loop opens a fresh session."""
+        if not self._dormant:
+            return
+        logger.info("Waking from dormant mode")
+        self._dormant = False
+        self._restart_requested.set()
+        self._wake_requested.set()
 
     async def _sleep_or_restart_requested(self, delay: float) -> None:
         """Sleep for a retry interval, waking early if a restart is requested."""
@@ -678,6 +712,9 @@ class LocalStream:
     async def _run_handler_startup_loop(self) -> None:
         """Start the realtime handler and keep settings UI alive after backend failures."""
         while not self._stop_event.is_set():
+            if self._dormant:
+                await self._wake_requested.wait()
+                continue
             if self._restart_requested.is_set():
                 await self._shutdown_active_handler()
                 if not self._can_rebuild_handler():
@@ -712,6 +749,8 @@ class LocalStream:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
+                if self._dormant:
+                    continue
                 self._set_backend_connection_state("disconnected", e)
                 logger.warning(
                     "Backend failed to start: %s. Settings UI remains available; retrying in %.1f seconds.",
@@ -722,6 +761,8 @@ class LocalStream:
             else:
                 if self._stop_event.is_set():
                     return
+                if self._dormant:
+                    continue
                 self._set_backend_connection_state("disconnected")
                 if self._restart_requested.is_set():
                     logger.info("Backend stopped for requested restart.")
@@ -786,7 +827,7 @@ class LocalStream:
         async def runner() -> None:
             # Capture loop for cross-thread personality actions
             loop = asyncio.get_running_loop()
-            self._asyncio_loop = loop  # type: ignore[assignment]
+            self._asyncio_loop = loop
             # Connect the backend first so it overlaps the warmup and audio config below.
             handler_task = asyncio.create_task(self._run_handler_startup_loop(), name="realtime-handler")
             self._tasks = [handler_task]
@@ -879,8 +920,14 @@ class LocalStream:
         while not self._stop_event.is_set():
             audio_frame = self._robot.media.get_audio_sample()
             if audio_frame is not None and not self._mic_muted:
-                await self.handler.receive((input_sample_rate, audio_frame))
-                self._emit_level("user", audio_frame)
+                if self.audio_tap is not None:
+                    try:
+                        self.audio_tap(input_sample_rate, audio_frame)
+                    except Exception as e:
+                        logger.warning("Audio tap failed: %s", e)
+                if not self._dormant:
+                    await self.handler.receive((input_sample_rate, audio_frame))
+                    self._emit_level("user", audio_frame)
             await asyncio.sleep(0)  # avoid busy loop
 
     async def play_loop(self) -> None:
