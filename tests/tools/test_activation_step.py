@@ -34,6 +34,7 @@ async def test_full_activation_walkthrough(deps: ToolDependencies, tmp_path: Pat
 
     assert (await step(deps, action="status"))["stage"] == "boot"
     assert (await step(deps, action="save"))["stage"] == "owner"
+    droid.presence = MagicMock()  # a camera is running, so the owner's face is required
     assert "enroll the owner" in (await step(deps, action="save"))["error"]
 
     droid.face_registry.enroll("Pasha", [np.ones(128, dtype=np.float32) / np.sqrt(128)], is_owner=True)
@@ -96,3 +97,13 @@ def test_tool_call_routine_accepts_droid_deps(deps: ToolDependencies) -> None:
     routine = ToolCallRoutine(tool_name="activation_step", args_json_str="{}", deps=deps)
 
     assert routine.deps.droid is deps.droid
+
+
+@pytest.mark.asyncio
+async def test_owner_stage_without_camera(deps: ToolDependencies) -> None:
+    """With the camera disabled, activation skips face enrolment instead of getting stuck."""
+    droid = deps.droid
+    assert droid is not None and droid.presence is None
+    droid.activation.go_to("owner")
+
+    assert (await ActivationStep()(deps, action="save"))["stage"] == "designation"

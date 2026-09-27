@@ -91,7 +91,7 @@ class ActivationStep(Tool):
 
             if stage.id == "boot":
                 await droid.run_boot_selftest()
-            elif stage.id == "owner" and not droid.face_registry.owner_enrolled():
+            elif stage.id == "owner" and droid.presence is not None and not droid.face_registry.owner_enrolled():
                 return {"error": "enroll the owner's face first with enroll_face role 'owner'"}
             elif stage.id == "wake_phrase":
                 apply_answer(stage.id, value, droid.identity)
