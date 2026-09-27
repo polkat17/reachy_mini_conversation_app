@@ -27,7 +27,7 @@ class ReadDiary(Tool):
         droid: "DroidRuntime | None" = deps.droid
         if droid is None:
             return {"error": "the diary is only available in the droid profile"}
-        allowed, reason = droid.memory_access_allowed()
+        allowed, reason = droid.owner_access_allowed()
         if not allowed:
             return {"error": reason}
         days = droid.memory.diary_days()

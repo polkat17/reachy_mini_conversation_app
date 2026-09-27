@@ -57,6 +57,14 @@
   </section>
 
   <section>
+    <h2>Software</h2>
+    <p>Merged upgrades install automatically at night while the droid is dormant. The new version must report
+      healthy within five minutes, or the previous one is reinstalled.</p>
+    <button class="secondary" data-post="/droid/api/update-now"
+      data-confirm="Check for an upgrade now? If one exists the droid restarts to install it.">Check for upgrade now</button>
+  </section>
+
+  <section>
     <h2>Factory reset</h2>
     <p>Forgets the droid's name, settings, faces and memories, and starts the activation protocol again.</p>
     <button class="danger" data-post="/droid/api/factory-reset"
@@ -71,7 +79,7 @@
     droid_name: "Designation", owner_name: "Owner", activated: "Activated", dormant: "State",
     activation_stage: "Activation stage", wake_phrase: "Wake phrase", in_view: "In view",
     notifications: "Phone notifications",
-    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software",
+    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests",
   };
 
   function show(text) { message.textContent = text; }

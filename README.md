@@ -202,6 +202,8 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `forget_memory` | Find memories, read them back, and delete only the confirmed ones. | `droid` profile only. |
 | `reminder` | Set, list or cancel reminders and timers. | `droid` profile only. |
 | `read_diary` | Read the droid's nightly diary entry. | `droid` profile only. |
+| `request_upgrade` | List or file upgrade requests (GitHub issues labelled `droid-upgrade`). | `droid` profile only. Requires `DROID_GITHUB_REPO` and `DROID_GITHUB_TOKEN`. |
+| `home_control` | List, turn on, turn off or toggle Home Assistant lights, switches, fans, scenes, scripts and media players. | `droid` profile only. Requires `DROID_HOME_ASSISTANT_URL` and `DROID_HOME_ASSISTANT_TOKEN`. Locks and alarms are never exposed. |
 | `camera` | Capture the latest camera frame and analyze it with the selected realtime backend. | Core install only. Requires the camera (disable with `--no-camera`). |
 | `idle_do_nothing` | Explicitly remain idle during an idle turn. Not intended for normal conversation turns. | Core install only. |
 | `move_head` | Queue a head pose change (left/right/up/down/front). | Core install only. |
@@ -456,6 +458,17 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 - **Voice filter**: the speaker output goes through a streaming droid filter (band-pass, light ring
   modulation, a short metallic resonance). It is causal, adding no buffering and well under a millisecond of
   processing per 50 ms chunk. Turn it off with `DROID_VOICE_FX=0`.
+- **Self-development**: when it lacks an ability the droid offers to file an upgrade request (a GitHub issue
+  labelled `droid-upgrade`; its token can only create issues). A scheduled Claude Code session turns open
+  requests into pull requests, and nothing merges without the owner. The `droid-sync-space` workflow mirrors
+  `main` to the droid's Hugging Face Space; while dormant at night the droid installs newer revisions through
+  a detached helper that stops the app, installs, restarts it dormant, and waits for the new version's health
+  beacon. If none arrives within five minutes it reinstalls the previous revision and notifies the owner. On
+  its next wake the droid announces its new abilities. See `DROID_ROADMAP.md` for the setup.
+- **Smart home**: `home_control` drives Home Assistant, only for low-risk devices and only when the owner (not
+  just a guest) is in view.
+- **Game commentary**: the `GameFeed` interface in `droid/game_feed.py` defines how a future camera or capture
+  card source will deliver frame descriptions; nothing implements it yet.
 - **Control page**: `http://<robot>:7860/droid` shows the droid's state, wake and sleep buttons, known faces
   (with "forget"), and a factory reset that restarts activation.
 
@@ -465,6 +478,9 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 | `DROID_AUTOSTART` | Register this app as the daemon's startup app. Default on. |
 | `DROID_IDLE_LIFE` | Idle behaviours while nobody is talking. Default on. |
 | `DROID_VOICE_FX` | Droid voice filter on the speaker output. Default on. |
+| `DROID_GITHUB_REPO` / `DROID_GITHUB_TOKEN` | Where upgrade requests are filed; the token needs only issue access. |
+| `DROID_UPDATE_SPACE` / `DROID_AUTO_UPDATE` | The Hugging Face Space mirroring `main`, and whether to install newer revisions at night. |
+| `DROID_HOME_ASSISTANT_URL` / `DROID_HOME_ASSISTANT_TOKEN` | Home Assistant address and long-lived access token. |
 | `DROID_SUMMARY_MODEL` | Hugging Face model for session summaries and the diary. Default `Qwen/Qwen2.5-7B-Instruct`; uses `HF_TOKEN`. |
 | `DROID_NTFY_TOPIC` / `DROID_NTFY_SERVER` | Phone notifications through [ntfy](https://ntfy.sh): subscribe to the same private topic in the ntfy app. |
 

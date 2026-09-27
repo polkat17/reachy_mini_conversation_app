@@ -24,7 +24,8 @@ def test_registers_running_app_as_startup_app(monkeypatch: pytest.MonkeyPatch) -
     }
     monkeypatch.setattr(autostart_mod, "daemon_request", _fake_daemon(responses, calls))
 
-    assert autostart_mod.ensure_autostart(MagicMock()) == "droid_app"
+    assert autostart_mod.current_app_name(MagicMock()) == "droid_app"
+    assert autostart_mod.ensure_autostart(MagicMock(), "droid_app") is True
     assert ("PUT", "/api/apps/startup-app", {"startup_app": "droid_app"}) in calls
 
 
@@ -37,7 +38,7 @@ def test_already_registered_is_left_alone(monkeypatch: pytest.MonkeyPatch) -> No
     }
     monkeypatch.setattr(autostart_mod, "daemon_request", _fake_daemon(responses, calls))
 
-    assert autostart_mod.ensure_autostart(MagicMock()) == "droid_app"
+    assert autostart_mod.ensure_autostart(MagicMock(), "droid_app") is True
     assert all(method == "GET" for method, _path, _payload in calls)
 
 
@@ -46,7 +47,7 @@ def test_not_run_by_daemon_skips(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, str, Any]] = []
     monkeypatch.setattr(autostart_mod, "daemon_request", _fake_daemon({}, calls))
 
-    assert autostart_mod.ensure_autostart(MagicMock()) is None
+    assert autostart_mod.current_app_name(MagicMock()) is None
 
 
 def test_daemon_errors_are_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,4 +58,5 @@ def test_daemon_errors_are_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(autostart_mod, "daemon_request", failing)
 
-    assert autostart_mod.ensure_autostart(MagicMock()) is None
+    assert autostart_mod.current_app_name(MagicMock()) is None
+    assert autostart_mod.ensure_autostart(MagicMock(), "droid_app") is False

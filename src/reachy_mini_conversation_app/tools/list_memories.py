@@ -29,7 +29,7 @@ class ListMemories(Tool):
         droid: "DroidRuntime | None" = deps.droid
         if droid is None:
             return {"error": "memory is only available in the droid profile"}
-        allowed, reason = droid.memory_access_allowed()
+        allowed, reason = droid.owner_access_allowed()
         if not allowed:
             return {"error": reason}
         facts = droid.memory.facts(str(kwargs.get("subject") or ""), limit=40)

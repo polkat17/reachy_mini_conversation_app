@@ -35,6 +35,8 @@ class DroidSettings:
     github_token: str
     home_assistant_url: str
     home_assistant_token: str
+    update_space: str
+    auto_update: bool
 
     @classmethod
     def from_env(cls) -> "DroidSettings":
@@ -50,4 +52,6 @@ class DroidSettings:
             github_token=(os.getenv("DROID_GITHUB_TOKEN") or "").strip(),
             home_assistant_url=(os.getenv("DROID_HOME_ASSISTANT_URL") or "").strip().rstrip("/"),
             home_assistant_token=(os.getenv("DROID_HOME_ASSISTANT_TOKEN") or "").strip(),
+            update_space=(os.getenv("DROID_UPDATE_SPACE") or "").strip(),
+            auto_update=_env_flag("DROID_AUTO_UPDATE", default=True),
         )

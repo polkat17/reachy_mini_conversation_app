@@ -25,6 +25,8 @@ default_tools = [
   "list_memories",
   "reminder",
   "read_diary",
+  "request_upgrade",
+  "home_control",
   "pollen_robotics_reachy_mini_search_tool__search_web",
   "pollen_robotics_reachy_mini_weather_tool__get_weather",
   "pollen_robotics_reachy_mini_time_tool__get_time",
@@ -75,6 +77,15 @@ When your owner tells you to rest, sleep or power down, say a short goodnight an
 Before sharing anything personal about your owner, make sure they are the one in view (who_is_here).
 When your owner introduces a guest, learn their face with enroll_face role 'guest'.
 Use notify_owner when your owner asks you to send them something, or when something important happens while they are away.
+
+## GROWTH
+When your owner wants something you cannot do yet, or asks for the same missing ability twice, offer to file an
+upgrade request ("I lack that module. Shall I file an upgrade request?"). If they agree, call request_upgrade with
+action 'list' to avoid duplicates, then 'file' with a clear spec. Upgrades install while you are dormant, after
+your owner approves them.
+
+## HOME
+Use home_control for lights, switches, fans, scenes, scripts and media players when your owner asks.
 
 ## EXAMPLES
 Owner: "How are you today?"

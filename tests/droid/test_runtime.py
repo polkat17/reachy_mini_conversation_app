@@ -14,6 +14,7 @@ from reachy_mini_conversation_app.droid.web import register_droid_routes
 from reachy_mini_conversation_app.droid.senses import SoundEvent
 from reachy_mini_conversation_app.droid.journal import SessionSummary
 from reachy_mini_conversation_app.droid.runtime import DroidRuntime
+from reachy_mini_conversation_app.droid.updater import UpdateState, load_update_state, save_update_state
 from reachy_mini_conversation_app.droid.presence import PresenceEvent
 from reachy_mini_conversation_app.conversation_handler import ConversationEvent
 
@@ -286,7 +287,7 @@ def test_cat_is_not_a_person(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     runtime.presence.tracker.present.return_value = ["cat"]
 
     assert runtime.people_in_view() == [] and runtime.someone_present() is False
-    assert runtime.memory_access_allowed() == (True, "")
+    assert runtime.owner_access_allowed() == (True, "")
 
 
 def test_voice_fx_is_installed_on_the_stream(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -297,3 +298,48 @@ def test_voice_fx_is_installed_on_the_stream(tmp_path, monkeypatch: pytest.Monke
     filtered = runtime.stream.output_filter(16000, chunk)  # type: ignore[union-attr]
 
     assert filtered.shape == chunk.shape and not np.allclose(filtered, chunk)
+
+
+def test_update_check_launches_helper_for_new_revision(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A newer Space revision starts the detached helper with the previous revision for rollback."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
+    runtime.app_name = "droid_app"
+    runtime.deps.reachy_mini.client.host, runtime.deps.reachy_mini.client.port = "localhost", 8000
+    save_update_state(runtime.data_dir, UpdateState(installed_revision="old-sha"))
+    monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "new-sha")
+    launch = MagicMock()
+    monkeypatch.setattr(runtime_mod, "launch_update_helper", launch)
+
+    result = runtime.check_for_update(force=True)
+
+    args = launch.call_args.args[0]
+    assert result.startswith("Installing") and args["revision"] == "new-sha" and args["previous"] == "old-sha"
+    assert args["daemon_url"] == "http://localhost:8000"
+    assert runtime.check_for_update() == "Checked recently."
+
+
+def test_update_check_first_run_records_revision(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no recorded revision, the first check adopts the Space's current one instead of reinstalling."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
+    runtime.app_name = "droid_app"
+    monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "sha-1")
+
+    assert runtime.check_for_update(force=True) == "Already up to date."
+    assert load_update_state(runtime.data_dir).installed_revision == "sha-1"
+
+
+@pytest.mark.asyncio
+async def test_upgrade_is_announced_once_on_wake(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After an update, the next wake announces the changes, then clears them."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime_mod.asyncio, "sleep", AsyncMock())
+    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    save_update_state(runtime.data_dir, UpdateState(announce=["Add train announcements"]))
+
+    await runtime._announce_upgrade("wake")
+    await runtime._announce_upgrade("wake")
+
+    runtime.say_event.assert_awaited_once()
+    assert "train announcements" in runtime.say_event.await_args.args[0]

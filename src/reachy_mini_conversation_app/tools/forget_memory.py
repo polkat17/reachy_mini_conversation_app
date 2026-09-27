@@ -38,7 +38,7 @@ class ForgetMemory(Tool):
         droid: "DroidRuntime | None" = deps.droid
         if droid is None:
             return {"error": "memory is only available in the droid profile"}
-        allowed, reason = droid.memory_access_allowed()
+        allowed, reason = droid.owner_access_allowed()
         if not allowed:
             return {"error": reason}
         confirm_ids = kwargs.get("confirm_ids") or []

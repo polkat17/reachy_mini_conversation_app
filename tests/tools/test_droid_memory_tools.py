@@ -77,7 +77,7 @@ async def test_memories_stay_private_from_strangers(deps: ToolDependencies) -> N
         await ForgetMemory()(deps, query="anything"),
         await ReadDiary()(deps),
     ):
-        assert "stay private" in result["error"]
+        assert "stays private" in result["error"]
 
 
 @pytest.mark.asyncio

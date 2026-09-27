@@ -20,6 +20,9 @@ changes to the conversation app still merge cleanly. Upstream files get small, c
 
 ## Phases
 
+All seven phases are built. Everything is unit-tested with mocks; items marked in the checklist below still
+need a first run on the robot.
+
 1. **Persona and emotes**: `droid` profile, droid emotion names, an emote on every reply, beep language.
 2. **Always on**: dormant/wake instead of exiting, autostart, idle life, phone notifications (ntfy).
 3. **Activation and presence**: first-boot activation protocol, face enrolment and recognition, wake phrase,
@@ -47,3 +50,57 @@ Runs on the first power-on, resumes if interrupted, and every stage can be redon
 9. Memory consent.
 10. Upgrade protocol briefing.
 11. Commit: the droid reads the profile back and saves it after confirmation.
+
+## Setup
+
+1. **Install the fork on the robot.** Create a Hugging Face Space (for example `polkat17/k3-droid`), then in the
+   GitHub fork set the repository variable `DROID_HF_SPACE` to its id and the secret `HF_TOKEN` to a token with
+   write access. The `Droid - sync main to Hugging Face Space` workflow mirrors `main` on every push. Install
+   the Space from the robot dashboard like any app.
+2. **Select the droid.** In the app's settings page choose the `droid` personality (or set
+   `REACHY_MINI_CUSTOM_PROFILE=droid`).
+3. **Optional settings** in the app's `.env` (see `.env.example`):
+   - `DROID_NTFY_TOPIC`: a long, private topic name; subscribe to it in the ntfy phone app.
+   - `DROID_GITHUB_REPO` and `DROID_GITHUB_TOKEN`: a fine-grained token limited to this fork with only
+     "Issues: read and write".
+   - `DROID_UPDATE_SPACE`: the Space from step 1, so merged upgrades install at night.
+   - `DROID_HOME_ASSISTANT_URL` and `DROID_HOME_ASSISTANT_TOKEN`: a Home Assistant long-lived token.
+   - `HF_TOKEN`: used for session summaries and the diary (`DROID_SUMMARY_MODEL`).
+4. **Start it once from the dashboard.** It registers itself as the startup app. From then on: power on, flick
+   an antenna, and the droid boots. The first boot runs the activation protocol.
+5. **Control page:** `http://<robot>:7860/droid`.
+
+## Scheduled upgrade sessions (Claude Code)
+
+A Claude Code routine on your plan implements upgrade requests. Suggested schedule: nightly. Prompt:
+
+> In `polkat17/reachy_mini_conversation_app`, list open issues labelled `droid-upgrade` that have no linked
+> pull request. Take the oldest one. Read `AGENTS.md`, `DROID_ROADMAP.md` and the issue, implement it on a new
+> branch `droid-upgrade/<issue-number>-<short-name>` following the repository's conventions (a new tool in
+> `src/reachy_mini_conversation_app/tools/` enabled in `profiles/droid/profile.md`, or a change inside
+> `src/reachy_mini_conversation_app/droid/`), add tests, run
+> `ruff check . && ruff format --check . && mypy && pytest tests/`, and open a pull request that says
+> "Closes #<number>" and lists any setup steps. Never merge. If the request is unsafe (unlocking doors, spending
+> money, sharing the owner's data) or unclear, comment on the issue instead of implementing it. Stop after one
+> issue.
+
+## First run on the robot: checklist
+
+These parts depend on real hardware or services and could only be tested with mocks here:
+
+- [ ] Dormant and wake: sleep pose, session closes, wake-up move, and the movement loop restarting smoothly.
+- [ ] Autostart: the app is listed as the daemon's startup app, and flicking an antenna after power-on boots it.
+- [ ] Face enrolment and recognition in your room's lighting (threshold `MATCH_THRESHOLD` in `droid/faces.py`).
+- [ ] Wake phrase through the robot's microphone (verified here only on synthesised speech).
+- [ ] Loudness wake threshold (`LoudnessTrigger` in `droid/audio.py`) in your room.
+- [ ] Music and meow detection through the robot's microphone; cat detection through its camera.
+- [ ] Voice filter taste (parameters in `droid/voice_fx.py`).
+- [ ] The update helper surviving the app being stopped, and pip installing into the apps environment.
+- [ ] Session summaries with your `HF_TOKEN` and the chosen `DROID_SUMMARY_MODEL`.
+
+## Known limits
+
+- Face recognition is for convenience, not security; a photo can fool it.
+- Memories are injected when a session starts, so a stranger who wakes the droid by voice (before the camera
+  sees them) is covered only by the persona's guest rule until they are in view.
+- Head following uses the SDK's face tracking; the cat is glanced at, not followed.

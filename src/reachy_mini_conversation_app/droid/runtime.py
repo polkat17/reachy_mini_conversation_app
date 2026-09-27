@@ -13,6 +13,7 @@ from collections.abc import Callable, Awaitable, Coroutine
 import numpy as np
 from numpy.typing import NDArray
 
+from reachy_mini_conversation_app.config import config
 from reachy_mini_conversation_app.memory import list_memory_facts
 from reachy_mini_conversation_app.streaming import AudioArray
 from reachy_mini_conversation_app.tools.beep import Beep
@@ -29,11 +30,19 @@ from reachy_mini_conversation_app.droid.journal import (
     summarize_session,
     write_diary_entry,
 )
+from reachy_mini_conversation_app.droid.updater import (
+    latest_revision,
+    load_update_state,
+    save_update_state,
+    write_health_beacon,
+    launch_update_helper,
+    take_boot_dormant_flag,
+)
 from reachy_mini_conversation_app.droid.identity import Identity, load_identity, save_identity, droid_data_dir
 from reachy_mini_conversation_app.droid.presence import CAT, STRANGER, PresenceEvent, PresenceSensor
 from reachy_mini_conversation_app.droid.settings import DroidSettings
 from reachy_mini_conversation_app.droid.voice_fx import DroidVoiceFilter
-from reachy_mini_conversation_app.droid.autostart import ensure_autostart
+from reachy_mini_conversation_app.droid.autostart import current_app_name, ensure_autostart
 from reachy_mini_conversation_app.droid.idle_life import IdleLife, in_quiet_hours, idle_remark_prompt
 from reachy_mini_conversation_app.droid.reactions import cat_prompt, presence_prompt, break_nudge_prompt
 from reachy_mini_conversation_app.tools.move_head import MoveHead
@@ -63,6 +72,8 @@ _PRESENCE_INTERVAL_DORMANT_S = 1.5
 _REMINDER_SESSION_GRACE_S = 60.0
 _CAT_REACTION_COOLDOWN_S = 600.0
 _TALKING_RECENTLY_S = 10.0
+_UPDATE_CHECK_INTERVAL_S = 20 * 3600.0
+_UPDATE_HOURS = range(2, 6)
 
 
 class DroidRuntime:
@@ -88,6 +99,7 @@ class DroidRuntime:
         self._voice_filters: dict[int, DroidVoiceFilter] = {}
         self._last_cat_reaction = float("-inf")
         self._dance_tool = Dance()
+        self.app_name: str | None = None
         self._stop_dance_tool = StopDance()
         self.journal = SessionJournal()
         self._checkpointing = False
@@ -117,7 +129,7 @@ class DroidRuntime:
             self._record_transcript,
         ]
         self.on_dormant: list[LifecycleHook] = [self._checkpoint_on_dormant]
-        self.on_wake: list[LifecycleHook] = []
+        self.on_wake: list[LifecycleHook] = [self._announce_upgrade]
         self.on_factory_reset: list[LifecycleHook] = [self._wipe_memory]
 
     # ---- wiring -------------------------------------------------------------
@@ -136,10 +148,7 @@ class DroidRuntime:
 
     def start(self) -> None:
         """Start background work: autostart registration, audio listeners, and the tick loop."""
-        if self.settings.autostart:
-            threading.Thread(
-                target=ensure_autostart, args=(self.deps.reachy_mini,), daemon=True, name="droid-autostart"
-            ).start()
+        threading.Thread(target=self._register_app, daemon=True, name="droid-autostart").start()
         threading.Thread(target=self._audio_worker, daemon=True, name="droid-audio").start()
         if self.identity.wake_phrase:
             self.wake_spotter.set_phrase(self.identity.wake_phrase)
@@ -346,6 +355,9 @@ class DroidRuntime:
     # ---- periodic behaviour --------------------------------------------------
 
     async def _tick_loop(self) -> None:
+        write_health_beacon(self.data_dir)
+        if take_boot_dormant_flag(self.data_dir):
+            self._spawn(self.enter_dormant("restarted after an update"))
         while not self._stop.is_set():
             try:
                 await self.tick()
@@ -384,6 +396,8 @@ class DroidRuntime:
         if self.is_dormant:
             if self.memory.due_reminders(time.time()):
                 await self.wake("reminder")
+            elif self.settings.auto_update and datetime.now().hour in _UPDATE_HOURS:
+                await asyncio.to_thread(self.check_for_update)
             return
         idle_s = self.seconds_since_activity()
         dormant_after_s = self.settings.dormant_after_minutes * 60.0
@@ -538,12 +552,15 @@ class DroidRuntime:
         if legacy:
             logger.info("Imported %d legacy memory facts", len(legacy))
 
-    def memory_access_allowed(self) -> tuple[bool, str]:
-        """Return whether memories may be shared now: not when only non-owners are in view."""
+    def owner_access_allowed(self) -> tuple[bool, str]:
+        """Return whether owner-only things (memories, the diary, the home) are allowed: not when only guests are in view."""
         in_view = self.people_in_view()
         if not in_view or self.owner_in_view():
             return True, ""
-        return False, f"{self.identity.owner_name} is not in view ({', '.join(in_view)} is), so memories stay private"
+        return False, (
+            f"{self.identity.owner_name} is not in view ({', '.join(in_view)} is), so this stays private until "
+            f"{self.identity.owner_name} is here"
+        )
 
     def _record_transcript(self, event: ConversationEvent) -> None:
         if event.kind == "user_transcript":
@@ -720,3 +737,59 @@ class DroidRuntime:
             )
         except Exception as e:
             logger.warning("Could not look at pixel (%d, %d): %s", u, v, e)
+
+    # ---- self-development: updates ---------------------------------------------------
+
+    def _register_app(self) -> None:
+        # Learn the app's daemon name (needed to restart it after updates) and make it the startup app.
+        self.app_name = current_app_name(self.deps.reachy_mini)
+        if self.app_name is not None and self.settings.autostart:
+            ensure_autostart(self.deps.reachy_mini, self.app_name)
+
+    def check_for_update(self, *, force: bool = False) -> str:
+        """Install a newer revision from the update Space if one exists; returns what happened."""
+        space = self.settings.update_space
+        if not space or self.app_name is None:
+            return "Updates are not set up (DROID_UPDATE_SPACE, and the app must be started by the robot)."
+        state = load_update_state(self.data_dir)
+        if not force and time.time() - state.last_checked_at < _UPDATE_CHECK_INTERVAL_S:
+            return "Checked recently."
+        state.last_checked_at = time.time()
+        latest = latest_revision(space, config.HF_TOKEN)
+        if latest is None:
+            save_update_state(self.data_dir, state)
+            return "Could not reach the update Space."
+        if not state.installed_revision:
+            # First run: assume the installed code is the Space's current revision.
+            state.installed_revision = latest
+        save_update_state(self.data_dir, state)
+        if latest == state.installed_revision:
+            return "Already up to date."
+        client = self.deps.reachy_mini.client
+        launch_update_helper(
+            {
+                "space": space,
+                "revision": latest,
+                "previous": state.installed_revision,
+                "app": self.app_name,
+                "daemon_url": f"http://{client.host}:{client.port}",
+                "data_dir": self.data_dir,
+                "hf_token": config.HF_TOKEN or "",
+                "ntfy_server": self.settings.ntfy_server,
+                "ntfy_topic": self.settings.ntfy_topic,
+            }
+        )
+        return f"Installing {latest[:8]}; the droid restarts in a moment."
+
+    async def _announce_upgrade(self, reason: str) -> None:
+        state = load_update_state(self.data_dir)
+        if not state.announce:
+            return
+        changes = "; ".join(state.announce)
+        state.announce = []
+        save_update_state(self.data_dir, state)
+        await asyncio.sleep(3.0)
+        await self.say_event(
+            f"[SYSTEM EVENT] You were upgraded while dormant. New changes: {changes}. Announce your new "
+            "capabilities in one or two proud lines."
+        )

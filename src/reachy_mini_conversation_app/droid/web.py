@@ -9,6 +9,8 @@ from fastapi.responses import FileResponse
 
 from reachy_mini_conversation_app.droid.notify import notifications_enabled
 from reachy_mini_conversation_app.droid.runtime import DroidRuntime
+from reachy_mini_conversation_app.droid.updater import load_update_state
+from reachy_mini_conversation_app.droid.upgrades import upgrades_enabled
 
 
 _PAGE = Path(__file__).parents[1] / "static" / "droid.html"
@@ -30,7 +32,19 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "notifications": notifications_enabled(runtime.settings),
         "known_faces": [person.name for person in runtime.face_registry.people()],
         "mood": runtime.mood() if identity.activated else "",
+        "update": _software_line(runtime),
+        "upgrade_requests": upgrades_enabled(runtime.settings),
     }
+
+
+def _software_line(runtime: DroidRuntime) -> str:
+    state = load_update_state(runtime.data_dir)
+    if not runtime.settings.update_space:
+        return "updates not set up"
+    installed = state.installed_revision[:8] or "unknown"
+    return f"{installed} from {runtime.settings.update_space}" + (
+        f" ({state.last_result})" if state.last_result else ""
+    )
 
 
 def droid_memories(runtime: DroidRuntime) -> dict[str, Any]:
@@ -110,3 +124,7 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
         if not runtime.memory.delete_episodes([episode_id]):
             raise HTTPException(status_code=404, detail="No such session")
         return {"status": "Session deleted."}
+
+    @app.post("/droid/api/update-now")
+    def _update_now() -> dict[str, Any]:
+        return {"status": runtime.check_for_update(force=True)}
