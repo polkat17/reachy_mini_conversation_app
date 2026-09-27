@@ -178,6 +178,11 @@ class ConversationHandler(AsyncStreamHandler, ABC):
         ...
 
     @abstractmethod
+    async def refresh_instructions(self) -> None:
+        """Push freshly built session instructions to the live session, if one is open."""
+        ...
+
+    @abstractmethod
     async def say(self, text: str) -> None:
         """Make the robot speak ``text`` now (injected turn; not verbatim TTS).
 

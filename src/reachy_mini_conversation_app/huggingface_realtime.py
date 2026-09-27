@@ -334,6 +334,17 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
         )
         return "Applied personality. Will take effect on next connection."
 
+    async def refresh_instructions(self) -> None:
+        """Push freshly built session instructions to the live session, if one is open."""
+        if self.connection is None:
+            return
+        await self.connection.session.update(
+            session=RealtimeSessionCreateRequestParam(
+                type="realtime",
+                instructions=get_session_instructions(self.instance_path),
+            ),
+        )
+
     async def _emit_debounced_partial(self, transcript: str, item_id: str, sequence_counter: int) -> None:
         """Emit partial transcript after debounce delay."""
         try:

@@ -23,7 +23,11 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "dormant": runtime.is_dormant,
         "wake_phrase": identity.wake_phrase,
         "someone_present": runtime.someone_present(),
+        "in_view": ", ".join(runtime.people_in_view()),
+        "activation_stage": "" if identity.activated else runtime.activation.stage.id,
+        "face_enrolled": runtime.face_registry.owner_enrolled(),
         "notifications": notifications_enabled(runtime.settings),
+        "known_faces": [person.name for person in runtime.face_registry.people()],
     }
 
 
@@ -51,3 +55,15 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
     @app.post("/droid/api/sleep")
     def _sleep() -> dict[str, Any]:
         return _require_ok(runtime.request_dormant("web"))
+
+    @app.post("/droid/api/forget-face/{name}")
+    def _forget_face(name: str) -> dict[str, Any]:
+        if not runtime.face_registry.forget(name):
+            raise HTTPException(status_code=404, detail=f"No face stored for {name}")
+        return {"status": f"Forgot {name}'s face."}
+
+    @app.post("/droid/api/factory-reset")
+    def _factory_reset() -> dict[str, Any]:
+        if not runtime.submit(runtime.factory_reset()):
+            raise HTTPException(status_code=409, detail="the droid runtime is not running yet")
+        return {"status": "Factory reset started. Activation will begin again."}

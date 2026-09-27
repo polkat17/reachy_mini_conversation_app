@@ -195,6 +195,9 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `stop_emotion` | Clear queued emotions. | Core install only. |
 | `beep` | Play a synthesised droid beep sequence (affirmative, negative, happy, sad, curious, alarm, thinking, ...). | Core install only. Enabled in the `droid` profile. |
 | `notify_owner` | Send a push notification to the owner's phone. | Requires `DROID_NTFY_TOPIC` (see [Droid companion](#droid-companion)). |
+| `activation_step` | Drive the droid's first-boot activation protocol one stage at a time. | `droid` profile only. |
+| `enroll_face` | Learn the owner's or a guest's face (embeddings only, never pictures). | `droid` profile only. Requires the camera. Downloads the SFace model from Hugging Face on first use. |
+| `who_is_here` | Report who the droid recognises in view. | `droid` profile only. Requires the camera. |
 | `camera` | Capture the latest camera frame and analyze it with the selected realtime backend. | Core install only. Requires the camera (disable with `--no-camera`). |
 | `idle_do_nothing` | Explicitly remain idle during an idle turn. Not intended for normal conversation turns. | Core install only. |
 | `move_head` | Queue a head pose change (left/right/up/down/front). | Core install only. |
@@ -422,7 +425,19 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
   dashboard) and the droid boots.
 - **Idle life**: while nobody is talking it glances around, beeps to itself and now and then makes a remark,
   silently during quiet hours.
-- **Control page**: `http://<robot>:7860/droid` shows the droid's state and has wake and sleep buttons.
+- **Activation**: on first power-on the droid runs an activation protocol: boot self-test, owner face
+  enrolment, its name, a wake phrase (tested three times), a voice, humour and talkativeness, interests and
+  topics to avoid, interaction rules (greetings, remarks, quiet hours, face following, break reminders), the
+  household (people and pets), memory consent, and the upgrade briefing. Progress survives power cuts; say
+  "redo" to repeat a stage. Answers go into `core.yaml`.
+- **Faces**: the droid recognises its owner and introduced guests with SFace embeddings on ONNX Runtime
+  (only embeddings are stored, in `<instance>/droid/faces.json`). It wakes when it sees its owner, welcomes
+  them back after long absences, says goodbye, suggests breaks after long desk sessions, and greets strangers
+  politely without sharing the owner's memories. Recognition is for convenience, not security.
+- **Wake phrase**: spotted offline by Vosk with a grammar limited to the chosen phrase. The small English model
+  (about 40 MB) downloads on first use into `<instance>/droid/models/`.
+- **Control page**: `http://<robot>:7860/droid` shows the droid's state, wake and sleep buttons, known faces
+  (with "forget"), and a factory reset that restarts activation.
 
 | Variable | Description |
 |----------|-------------|

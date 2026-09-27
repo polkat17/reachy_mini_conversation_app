@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from reachy_mini_conversation_app.droid import runtime as runtime_mod
 from reachy_mini_conversation_app.droid.web import register_droid_routes
 from reachy_mini_conversation_app.droid.runtime import DroidRuntime
+from reachy_mini_conversation_app.droid.presence import PresenceEvent
 from reachy_mini_conversation_app.conversation_handler import ConversationEvent
 
 
@@ -134,3 +135,41 @@ def test_web_api_reports_status_and_wakes(tmp_path, monkeypatch: pytest.MonkeyPa
     assert woke.json() == {"status": "waking"}
     assert slept.status_code == 409
     assert client.get("/droid").status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_owner_sighting_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An activated, dormant droid wakes when it recognises its owner."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.identity.activated = True
+    runtime.stream.is_dormant = True  # type: ignore[union-attr]
+    runtime.wake = AsyncMock()  # type: ignore[method-assign]
+
+    await runtime._react_to_presence(PresenceEvent("arrived", "Pasha", True, away_s=5000.0))
+
+    runtime.wake.assert_awaited_once_with("owner_seen")
+
+
+@pytest.mark.asyncio
+async def test_stranger_is_greeted_with_startle(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An awake droid startles at a stranger and voices a guarded greeting."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.identity.activated = True
+    runtime._emotion_tool = AsyncMock()  # type: ignore[method-assign]
+    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    await runtime._react_to_presence(PresenceEvent("arrived", "stranger", False, away_s=float("inf")))
+
+    runtime._emotion_tool.assert_awaited_once_with(runtime.deps, emotion="startled")
+    assert "never share" in runtime.say_event.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_presence_ignored_before_activation(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """During activation, presence events do not interrupt the protocol."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.say_event = AsyncMock()  # type: ignore[method-assign]
+
+    await runtime._react_to_presence(PresenceEvent("arrived", "stranger", False, away_s=float("inf")))
+
+    runtime.say_event.assert_not_awaited()

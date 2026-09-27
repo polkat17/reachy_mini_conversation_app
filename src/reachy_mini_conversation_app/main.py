@@ -203,6 +203,7 @@ def run(
     from reachy_mini_conversation_app.droid.identity import is_droid_profile_active
 
     droid_runtime = DroidRuntime(deps, instance_path) if is_droid_profile_active() else None
+    deps.droid = droid_runtime
 
     def build_handler(startup_voice: Optional[str] = None) -> ConversationHandler:
         """Build a Hugging Face realtime handler for the current runtime config."""

@@ -16,13 +16,18 @@ from numpy.typing import NDArray
 from reachy_mini_conversation_app.streaming import AudioArray
 from reachy_mini_conversation_app.tools.beep import Beep
 from reachy_mini_conversation_app.droid.audio import LoudnessTrigger, to_mono_16k
+from reachy_mini_conversation_app.droid.faces import FaceRegistry
 from reachy_mini_conversation_app.droid.emotes import EmoteGuard
-from reachy_mini_conversation_app.droid.identity import Identity, load_identity
+from reachy_mini_conversation_app.droid.identity import Identity, load_identity, save_identity, droid_data_dir
+from reachy_mini_conversation_app.droid.presence import STRANGER, PresenceEvent, PresenceSensor
 from reachy_mini_conversation_app.droid.settings import DroidSettings
 from reachy_mini_conversation_app.droid.autostart import ensure_autostart
-from reachy_mini_conversation_app.droid.idle_life import IdleLife, idle_remark_prompt
+from reachy_mini_conversation_app.droid.idle_life import IdleLife, in_quiet_hours, idle_remark_prompt
+from reachy_mini_conversation_app.droid.reactions import presence_prompt, break_nudge_prompt
 from reachy_mini_conversation_app.tools.move_head import MoveHead
+from reachy_mini_conversation_app.droid.activation import ActivationProgress
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from reachy_mini_conversation_app.droid.wake_phrase import WakePhraseSpotter
 from reachy_mini_conversation_app.tools.play_emotion import PlayEmotion
 from reachy_mini_conversation_app.conversation_handler import ConversationEvent, ConversationHandler
 
@@ -39,6 +44,8 @@ LifecycleHook = Callable[[str], Awaitable[None]]
 _TICK_INTERVAL_S = 1.0
 _GOODBYE_GRACE_S = 4.0
 _AUDIO_QUEUE_FRAMES = 200
+_PRESENCE_INTERVAL_AWAKE_S = 1.0
+_PRESENCE_INTERVAL_DORMANT_S = 1.5
 
 
 class DroidRuntime:
@@ -50,6 +57,14 @@ class DroidRuntime:
         self.instance_path = instance_path
         self.settings = DroidSettings.from_env()
         self.identity: Identity = load_identity(instance_path)
+        self.data_dir = droid_data_dir(instance_path)
+        self.face_registry = FaceRegistry(self.data_dir)
+        self.presence: PresenceSensor | None = None
+        self.wake_spotter = WakePhraseSpotter(self.data_dir / "models")
+        self.activation = ActivationProgress(self.data_dir)
+        self._wake_test_active = False
+        self._wake_test_hits = 0
+        self._last_break_nudge_at = time.monotonic()
         self.handler: ConversationHandler | None = None
         self.stream: "LocalStream | None" = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -64,10 +79,14 @@ class DroidRuntime:
         self._last_user_turn_at = time.monotonic()
         self._loudness_trigger = LoudnessTrigger()
         self._audio_queue: queue.Queue[NDArray[np.float32]] = queue.Queue(maxsize=_AUDIO_QUEUE_FRAMES)
-        self._audio_listeners: list[AudioListener] = [self._wake_on_loud_speech]
-        self._event_listeners: list[Callable[[ConversationEvent], None]] = [self._emote_guard.on_event]
+        self._audio_listeners: list[AudioListener] = [self._wake_on_loud_speech, self._listen_for_wake_phrase]
+        self._event_listeners: list[Callable[[ConversationEvent], None]] = [
+            self._emote_guard.on_event,
+            self._on_session_started,
+        ]
         self.on_dormant: list[LifecycleHook] = []
         self.on_wake: list[LifecycleHook] = []
+        self.on_factory_reset: list[LifecycleHook] = []
 
     # ---- wiring -------------------------------------------------------------
 
@@ -88,11 +107,23 @@ class DroidRuntime:
                 target=ensure_autostart, args=(self.deps.reachy_mini,), daemon=True, name="droid-autostart"
             ).start()
         threading.Thread(target=self._audio_worker, daemon=True, name="droid-audio").start()
+        if self.identity.wake_phrase:
+            self.wake_spotter.set_phrase(self.identity.wake_phrase)
+        if self.deps.camera_enabled:
+            self.presence = PresenceSensor(
+                self.deps.reachy_mini.media.get_frame,
+                self.face_registry,
+                self._on_presence_event,
+                lambda: _PRESENCE_INTERVAL_DORMANT_S if self.is_dormant else _PRESENCE_INTERVAL_AWAKE_S,
+            )
+            self.presence.start()
         threading.Thread(target=self._start_tick_loop_when_ready, daemon=True, name="droid-tick-start").start()
 
     def stop(self) -> None:
         """Stop background threads."""
         self._stop.set()
+        if self.presence is not None:
+            self.presence.stop()
 
     def add_audio_listener(self, listener: AudioListener) -> None:
         """Receive every mic frame as 16 kHz mono float32, on the droid audio thread."""
@@ -106,6 +137,10 @@ class DroidRuntime:
         """Re-read ``core.yaml`` after it changed."""
         self.identity = load_identity(self.instance_path)
         return self.identity
+
+    def save_identity(self) -> None:
+        """Persist the in-memory identity to ``core.yaml``."""
+        save_identity(self.instance_path, self.identity)
 
     @property
     def is_dormant(self) -> bool:
@@ -294,8 +329,19 @@ class DroidRuntime:
         return time.monotonic() - self._last_user_turn_at
 
     def someone_present(self) -> bool:
-        """Return whether a person is currently in view; overridden once presence sensing is running."""
-        return False
+        """Return whether anyone is currently in view."""
+        return self.presence is not None and bool(self.presence.tracker.present())
+
+    def owner_in_view(self) -> bool:
+        """Return whether the owner is currently recognised in view."""
+        if self.presence is None:
+            return False
+        present = set(self.presence.tracker.present())
+        return any(person.is_owner and person.name in present for person in self.face_registry.people())
+
+    def people_in_view(self) -> list[str]:
+        """Return the names in view (``stranger`` for unrecognised faces)."""
+        return [] if self.presence is None else self.presence.tracker.present()
 
     async def tick(self) -> None:
         """Run once per second: dormancy timeout and idle life."""
@@ -306,6 +352,7 @@ class DroidRuntime:
         if dormant_after_s > 0 and self.seconds_since_user_turn() >= dormant_after_s and not self.someone_present():
             self._spawn(self.enter_dormant("inactivity"))
             return
+        await self._maybe_nudge_break()
         if not self.settings.idle_life or not self.deps.movement_manager.is_idle():
             return
         action = self._idle_life.next_action(idle_s, time.monotonic(), self.identity.protocols, datetime.now())
@@ -320,3 +367,111 @@ class DroidRuntime:
             await self._move_head_tool(self.deps, direction=action.value)
         elif action.kind == "remark":
             await self.say_event(idle_remark_prompt(idle_s / 60.0))
+
+    async def _maybe_nudge_break(self) -> None:
+        minutes = self.identity.protocols.break_nudge_minutes
+        if self.presence is None or not self.identity.activated or minutes <= 0:
+            return
+        now = time.monotonic()
+        present_s = self.presence.tracker.owner_present_for(now)
+        if present_s >= minutes * 60 and now - self._last_break_nudge_at >= minutes * 60:
+            self._last_break_nudge_at = now
+            await self.say_event(break_nudge_prompt(self.identity, present_s))
+
+    # ---- presence --------------------------------------------------------------
+
+    def _on_presence_event(self, event: PresenceEvent) -> None:
+        self.submit(self._react_to_presence(event))
+
+    async def _react_to_presence(self, event: PresenceEvent) -> None:
+        if not self.identity.activated:
+            return
+        if self.is_dormant:
+            if event.kind == "arrived" and event.is_owner and self.identity.protocols.greet_on_sight:
+                await self.wake("owner_seen")
+            return
+        if in_quiet_hours(self.identity.protocols.quiet_hours, datetime.now()):
+            return
+        if event.kind == "arrived" and event.name == STRANGER:
+            await self._emotion_tool(self.deps, emotion="startled")
+        prompt = presence_prompt(event, self.identity)
+        if prompt is not None:
+            await self.say_event(prompt)
+
+    def enroll_face(self, name: str, *, is_owner: bool) -> dict[str, Any]:
+        """Blocking: capture the largest face for a few seconds and store its embeddings under ``name``."""
+        if self.presence is None:
+            return {"error": "the camera is disabled, so faces cannot be enrolled"}
+        embeddings = self.presence.capture_embeddings(exclude_known=not is_owner)
+        if len(embeddings) < 3:
+            return {"error": "I could not see a face clearly; ask them to face the camera in good light and retry"}
+        stored = self.face_registry.enroll(name, embeddings, is_owner=is_owner)
+        return {"status": "enrolled", "name": name, "samples": stored}
+
+    # ---- activation --------------------------------------------------------------
+
+    def _on_session_started(self, event: ConversationEvent) -> None:
+        if event.kind == "session_started" and self.identity.protocols.follow_face and self.deps.camera_enabled:
+            self.deps.movement_manager.set_head_tracking(True)
+
+    async def run_boot_selftest(self) -> None:
+        """Boot self-test: beeps, a head scan and an antenna twitch."""
+        await self.beep("boot")
+        for direction in ("left", "right", "front"):
+            await self._move_head_tool(self.deps, direction=direction)
+            await asyncio.sleep(1.0)
+        await self._emotion_tool(self.deps, emotion="curious")
+
+    def _listen_for_wake_phrase(self, samples: NDArray[np.float32]) -> None:
+        # Spotting only runs while dormant or during the activation test, to save CPU.
+        if not (self.is_dormant or self._wake_test_active):
+            return
+        if not self.wake_spotter.feed(samples):
+            return
+        if self._wake_test_active:
+            self._wake_test_hits += 1
+            logger.info("Wake phrase test: heard %d time(s)", self._wake_test_hits)
+        else:
+            self.request_wake("wake_phrase")
+
+    async def run_wake_test(self, phrase: str, needed: int = 2, timeout_s: float = 20.0) -> int:
+        """Listen for ``phrase`` for up to ``timeout_s``; returns how many times it was heard."""
+        self.wake_spotter.set_phrase(phrase)
+        deadline = time.monotonic() + 60.0
+        while not self.wake_spotter.ready and time.monotonic() < deadline:
+            await asyncio.sleep(0.5)
+        self._wake_test_hits = 0
+        self._wake_test_active = True
+        try:
+            deadline = time.monotonic() + timeout_s
+            while self._wake_test_hits < needed and time.monotonic() < deadline:
+                await asyncio.sleep(0.2)
+        finally:
+            self._wake_test_active = False
+        return self._wake_test_hits
+
+    async def change_voice(self, voice: str) -> str:
+        """Switch the live voice and remember it for future sessions."""
+        if self.stream is None:
+            return "No stream is running."
+        return await self.stream.change_voice(voice)
+
+    async def complete_activation(self) -> None:
+        """Mark the droid activated and push the full identity to the live session."""
+        self.identity.activated = True
+        self.save_identity()
+        self.wake_spotter.set_phrase(self.identity.wake_phrase)
+        if self.handler is not None:
+            await self.handler.refresh_instructions()
+
+    async def factory_reset(self) -> None:
+        """Forget identity, faces and activation progress, then restart activation in a fresh session."""
+        logger.warning("Droid factory reset requested")
+        await self._run_hooks(self.on_factory_reset, "factory_reset")
+        self.face_registry.clear()
+        self.activation.reset()
+        self.identity = Identity()
+        self.save_identity()
+        self.wake_spotter.set_phrase("")
+        if self.stream is not None:
+            await self.stream.request_backend_restart("droid factory reset")

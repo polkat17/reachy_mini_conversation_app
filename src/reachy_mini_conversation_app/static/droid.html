@@ -40,13 +40,27 @@
     </div>
   </section>
 
+  <section>
+    <h2>Known faces</h2>
+    <p>Only face embeddings are stored, never pictures.</p>
+    <ul id="faces"></ul>
+  </section>
+
+  <section>
+    <h2>Factory reset</h2>
+    <p>Forgets the droid's name, settings, faces and memories, and starts the activation protocol again.</p>
+    <button class="danger" data-post="/droid/api/factory-reset"
+      data-confirm="Erase the droid's identity, faces and memories and restart activation?">Factory reset</button>
+  </section>
+
   <div id="extra-sections"></div>
 </main>
 <script>
   const message = document.getElementById("message");
   const labels = {
     droid_name: "Designation", owner_name: "Owner", activated: "Activated", dormant: "State",
-    wake_phrase: "Wake phrase", someone_present: "Someone in view", notifications: "Phone notifications",
+    activation_stage: "Activation stage", wake_phrase: "Wake phrase", in_view: "In view",
+    notifications: "Phone notifications",
     mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software",
   };
 
@@ -84,10 +98,28 @@
     }
   }
 
+  function renderFaces(names) {
+    const list = document.getElementById("faces");
+    list.replaceChildren();
+    if (!names.length) list.append(Object.assign(document.createElement("li"), { textContent: "None yet." }));
+    for (const name of names) {
+      const item = document.createElement("li");
+      const forget = document.createElement("button");
+      forget.className = "secondary";
+      forget.textContent = "Forget";
+      forget.dataset.post = `/droid/api/forget-face/${encodeURIComponent(name)}`;
+      forget.dataset.confirm = `Forget ${name}'s face?`;
+      item.append(`${name} `, forget);
+      list.append(item);
+    }
+  }
+
   async function refresh() {
     try {
       const response = await fetch("/droid/api/status");
-      render(await response.json());
+      const status = await response.json();
+      render(status);
+      renderFaces(status.known_faces || []);
     } catch (error) {
       show(`Cannot reach the droid: ${error.message}`);
     }

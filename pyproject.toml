@@ -19,9 +19,10 @@ dependencies = [
     #OpenAI (used by the Hugging Face backend)
     "openai==2.28.0",
 
-    #Droid companion: core.yaml identity file and synthesised beeps
+    #Droid companion: core.yaml identity file, synthesised beeps, offline wake phrase spotting
     "pyyaml>=6.0",
     "scipy>=1.11",
+    "vosk==0.3.44",  # 0.3.45 ships no macOS wheel
 
     #Reachy mini
     "reachy_mini_dances_library",
