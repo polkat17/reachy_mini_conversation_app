@@ -334,6 +334,17 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
         )
         return "Applied personality. Will take effect on next connection."
 
+    async def refresh_instructions(self) -> None:
+        """Push freshly built session instructions to the live session, if one is open."""
+        if self.connection is None:
+            return
+        await self.connection.session.update(
+            session=RealtimeSessionCreateRequestParam(
+                type="realtime",
+                instructions=get_session_instructions(self.instance_path),
+            ),
+        )
+
     async def _emit_debounced_partial(self, transcript: str, item_id: str, sequence_counter: int) -> None:
         """Emit partial transcript after debounce delay."""
         try:
@@ -732,6 +743,7 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
                 self._connected_event.set()
             except Exception:
                 pass
+            self._emit_conversation_event("session_started")
 
             response_sender_task: asyncio.Task[None] | None = None
             try:
@@ -787,6 +799,7 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
                         self._response_done_event.set()
                         self._response_started_or_rejected_event.set()
                         logger.debug("Response done")
+                        self._emit_conversation_event("response_done")
 
                     if event.type == "conversation.item.input_audio_transcription.delta":
                         self._mark_activity("user_transcription_delta")
@@ -880,6 +893,7 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
                             )
                             continue
 
+                        self._emit_conversation_event("tool_call", tool_name)
                         self._in_flight_tool_calls.add(call_id)
                         background_tool = await self.tool_manager.start_tool(
                             call_id=call_id,

@@ -28,6 +28,7 @@ Conversational app for the Reachy Mini robot combining realtime voice, vision, p
 - [LLM tools](#llm-tools-exposed-to-the-assistant)
 - [Creating and adding tools](#creating-and-adding-tools)
 - [Advanced features](#advanced-features)
+- [Droid companion](#droid-companion)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -192,6 +193,17 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `stop_dance` | Clear queued dances. | Core install only. |
 | `play_emotion` | Play a recorded emotion clip via Hugging Face datasets. | Core install only. Uses the default open emotions dataset: [`pollen-robotics/reachy-mini-emotions-library`](https://huggingface.co/datasets/pollen-robotics/reachy-mini-emotions-library). |
 | `stop_emotion` | Clear queued emotions. | Core install only. |
+| `beep` | Play a synthesised droid beep sequence (affirmative, negative, happy, sad, curious, alarm, thinking, ...). | Core install only. Enabled in the `droid` profile. |
+| `notify_owner` | Send a push notification to the owner's phone. | Requires `DROID_NTFY_TOPIC` (see [Droid companion](#droid-companion)). |
+| `activation_step` | Drive the droid's first-boot activation protocol one stage at a time. | `droid` profile only. |
+| `enroll_face` | Learn the owner's or a guest's face (embeddings only, never pictures). | `droid` profile only. Requires the camera. Downloads the SFace model from Hugging Face on first use. |
+| `who_is_here` | Report who the droid recognises in view. | `droid` profile only. Requires the camera. |
+| `memorize` / `recall` / `list_memories` | Save a durable fact; search facts and past sessions by meaning; list facts. | `droid` profile only. SQLite in `<instance>/droid/memory.db`; MiniLM embeddings on ONNX Runtime (downloaded from Hugging Face on first use). |
+| `forget_memory` | Find memories, read them back, and delete only the confirmed ones. | `droid` profile only. |
+| `reminder` | Set, list or cancel reminders and timers. | `droid` profile only. |
+| `read_diary` | Read the droid's nightly diary entry. | `droid` profile only. |
+| `request_upgrade` | List or file upgrade requests (GitHub issues labelled `droid-upgrade`). | `droid` profile only. Requires `DROID_GITHUB_REPO` and `DROID_GITHUB_TOKEN`. |
+| `home_control` | List, turn on, turn off or toggle Home Assistant lights, switches, fans, scenes, scripts and media players. | `droid` profile only. Requires `DROID_HOME_ASSISTANT_URL` and `DROID_HOME_ASSISTANT_TOKEN`. Locks and alarms are never exposed. |
 | `camera` | Capture the latest camera frame and analyze it with the selected realtime backend. | Core install only. Requires the camera (disable with `--no-camera`). |
 | `idle_do_nothing` | Explicitly remain idle during an idle turn. Not intended for normal conversation turns. | Core install only. |
 | `move_head` | Queue a head pose change (left/right/up/down/front). | Core install only. |
@@ -401,6 +413,76 @@ reachy-mini-conversation-app --robot-name <name>
 `<name>` must match the daemon's `--robot-name` value so the app connects to the correct robot.
 
 </details>
+
+## Droid companion
+
+The `droid` profile turns Reachy Mini into a companion droid from the future. Select it in the UI or set
+`REACHY_MINI_CUSTOM_PROFILE=droid`. Its code lives in `src/reachy_mini_conversation_app/droid/`; the plan is in
+`DROID_ROADMAP.md`.
+
+- **Identity**: `core.yaml` in the app data folder (`<instance>/droid/core.yaml`) holds the droid's name, its
+  owner and its behaviour settings. It is hand-editable and injected into every session.
+- **Body language**: every spoken reply comes with an emote. When the model forgets to call `play_emotion` or
+  `beep`, the droid picks a fitting emotion itself.
+- **Always on**: the droid never stops itself. `go_to_sleep`, the web page and inactivity put it in *dormant*
+  mode: sleep pose, realtime session closed, but the app keeps listening and watching so it can wake again.
+  Before a wake phrase is set, any sustained speech wakes it. On start it registers itself as the robot's
+  startup app. The wireless robot boots asleep, so after power-on flick an antenna (or wake the robot from the
+  dashboard) and the droid boots.
+- **Idle life**: while nobody is talking it glances around, beeps to itself and now and then makes a remark,
+  silently during quiet hours.
+- **Activation**: on first power-on the droid runs an activation protocol: boot self-test, owner face
+  enrolment, its name, a wake phrase (tested three times), a voice, humour and talkativeness, interests and
+  topics to avoid, interaction rules (greetings, remarks, quiet hours, face following, break reminders), the
+  household (people and pets), memory consent, and the upgrade briefing. Progress survives power cuts; say
+  "redo" to repeat a stage. Answers go into `core.yaml`.
+- **Faces**: the droid recognises its owner and introduced guests with SFace embeddings on ONNX Runtime
+  (only embeddings are stored, in `<instance>/droid/faces.json`). It wakes when it sees its owner, welcomes
+  them back after long absences, says goodbye, suggests breaks after long desk sessions, and greets strangers
+  politely without sharing the owner's memories. Recognition is for convenience, not security.
+- **Wake phrase**: spotted offline by Vosk with a grammar limited to the chosen phrase. The small English model
+  (about 40 MB) downloads on first use into `<instance>/droid/models/`.
+- **Memory**: facts, session summaries, reminders and a nightly diary live in `<instance>/droid/memory.db`
+  (text only). Each session starts with the droid's mood, upcoming reminders, the last three sessions and the
+  key facts (about 1,500 tokens); everything else is reached through `recall`. When the droid goes dormant (or
+  after 60 turns) the transcript is summarised by `DROID_SUMMARY_MODEL` into an episode and durable facts, with
+  near-duplicates updated instead of added. Without a reachable model it keeps a plain excerpt. Memory tools
+  refuse to share anything while only strangers are in view, and nothing is stored without memory consent.
+- **Daily rhythm**: a morning briefing on the first sighting of the owner before noon (weather, today's
+  reminders, a callback to the last session), a mood that drifts with how often it sees its owner, reminders
+  that wake it and fall back to a phone notification, and a diary entry written at 23:00.
+- **Senses**: a YAMNet sound classifier (ONNX) listens for music, which makes the droid dance while nobody
+  is talking, and for meows. An SSD-MobileNet detector (ONNX) spots the cat on camera. The droid glances at
+  the cat, trills, and talks to it by its household name, at most every ten minutes, and counts its visits for
+  the diary. Show and tell uses the camera tool: hold something up and ask it to look.
+- **Voice filter**: the speaker output goes through a streaming droid filter (band-pass, light ring
+  modulation, a short metallic resonance). It is causal, adding no buffering and well under a millisecond of
+  processing per 50 ms chunk. Turn it off with `DROID_VOICE_FX=0`.
+- **Self-development**: when it lacks an ability the droid offers to file an upgrade request (a GitHub issue
+  labelled `droid-upgrade`; its token can only create issues). A scheduled Claude Code session turns open
+  requests into pull requests, and nothing merges without the owner. The `droid-sync-space` workflow mirrors
+  `main` to the droid's Hugging Face Space; while dormant at night the droid installs newer revisions through
+  a detached helper that stops the app, installs, restarts it dormant, and waits for the new version's health
+  beacon. If none arrives within five minutes it reinstalls the previous revision and notifies the owner. On
+  its next wake the droid announces its new abilities. See `DROID_ROADMAP.md` for the setup.
+- **Smart home**: `home_control` drives Home Assistant, only for low-risk devices and only when the owner (not
+  just a guest) is in view.
+- **Game commentary**: the `GameFeed` interface in `droid/game_feed.py` defines how a future camera or capture
+  card source will deliver frame descriptions; nothing implements it yet.
+- **Control page**: `http://<robot>:7860/droid` shows the droid's state, wake and sleep buttons, known faces
+  (with "forget"), and a factory reset that restarts activation.
+
+| Variable | Description |
+|----------|-------------|
+| `DROID_DORMANT_AFTER_MINUTES` | Minutes without anyone talking or in view before going dormant. Default `20`; `0` disables. |
+| `DROID_AUTOSTART` | Register this app as the daemon's startup app. Default on. |
+| `DROID_IDLE_LIFE` | Idle behaviours while nobody is talking. Default on. |
+| `DROID_VOICE_FX` | Droid voice filter on the speaker output. Default on. |
+| `DROID_GITHUB_REPO` / `DROID_GITHUB_TOKEN` | Where upgrade requests are filed; the token needs only issue access. |
+| `DROID_UPDATE_SPACE` / `DROID_AUTO_UPDATE` | The Hugging Face Space mirroring `main`, and whether to install newer revisions at night. |
+| `DROID_HOME_ASSISTANT_URL` / `DROID_HOME_ASSISTANT_TOKEN` | Home Assistant address and long-lived access token. |
+| `DROID_SUMMARY_MODEL` | Hugging Face model for session summaries and the diary. Default `Qwen/Qwen2.5-7B-Instruct`; uses `HF_TOKEN`. |
+| `DROID_NTFY_TOPIC` / `DROID_NTFY_SERVER` | Phone notifications through [ntfy](https://ntfy.sh): subscribe to the same private topic in the ntfy app. |
 
 ## Contributing
 

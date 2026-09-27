@@ -5,6 +5,7 @@ from pathlib import Path
 
 from reachy_mini_conversation_app.config import config, get_default_voice
 from reachy_mini_conversation_app.memory import format_memory_for_prompt
+from reachy_mini_conversation_app.droid.context import build_droid_context, build_droid_greeting
 from reachy_mini_conversation_app.profile_store import (
     DEFAULT_PROFILE_NAME,
     ProfileDefinition,
@@ -12,6 +13,7 @@ from reachy_mini_conversation_app.profile_store import (
     read_profile,
     read_packaged_default_profile,
 )
+from reachy_mini_conversation_app.droid.identity import DROID_PROFILE_NAME
 
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,11 @@ def get_session_instructions(instance_path: str | Path | None = None) -> str:
     if not instructions:
         raise RuntimeError("Default profile has no usable instructions")
 
-    memory_prompt = format_memory_for_prompt(instance_path)
+    # Droid companion: its identity, memories and mood replace the generic memory block.
+    if profile_name == DROID_PROFILE_NAME:
+        memory_prompt = build_droid_context(instance_path)
+    else:
+        memory_prompt = format_memory_for_prompt(instance_path)
     if memory_prompt:
         return f"{memory_prompt}\n\n{instructions}"
     return instructions
@@ -64,6 +70,8 @@ def get_session_voice(default: str | None = None) -> str:
 
 def get_session_greeting_prompt() -> str:
     """Return the active profile greeting prompt or the app default."""
+    if config.REACHY_MINI_CUSTOM_PROFILE == DROID_PROFILE_NAME:
+        return build_droid_greeting(config.INSTANCE_PATH)
     try:
         return _active_profile().greeting or DEFAULT_GREETING_PROMPT
     except (FileNotFoundError, ProfileFormatError) as exc:

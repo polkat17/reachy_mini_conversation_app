@@ -1,0 +1,40 @@
+name: Droid - sync main to Hugging Face Space
+
+# Mirrors main to the droid's own Space so the robot can install merged upgrades.
+# Set the repository variable DROID_HF_SPACE (e.g. "owner/k3-droid") and the secret HF_TOKEN (write access).
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: droid-hf-sync
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  sync:
+    name: sync
+    if: ${{ vars.DROID_HF_SPACE != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          lfs: true
+          persist-credentials: false
+      - name: Sync GitHub to Hugging Face Hub
+        uses: huggingface/hub-sync@da166beda9a9aff15d1de9a82c6dc86c410ea3ee  # v0.2.1
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: ${{ vars.DROID_HF_SPACE }}
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          space_sdk: static

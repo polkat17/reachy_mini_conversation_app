@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Droid Console</title>
+<style>
+  :root { --bg: #0f1216; --panel: #181d23; --text: #e6edf3; --muted: #8b98a5; --accent: #f2a93b; --ok: #4cc38a; --warn: #e5534b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 22px; letter-spacing: 0.08em; margin: 8px 0 16px; }
+  h3 { font-size: 13px; color: var(--muted); margin: 12px 0 2px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 10px; }
+  section { background: var(--panel); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  button { background: var(--accent); color: #111; border: 0; border-radius: 6px; padding: 8px 14px; font-weight: 600; cursor: pointer; margin: 4px 6px 4px 0; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--muted); }
+  button.danger { background: var(--warn); color: #fff; }
+  input, textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid #2c343d; border-radius: 6px; padding: 8px; font: inherit; }
+  ul { padding-left: 18px; margin: 6px 0; }
+  li { margin: 3px 0; }
+  .state-awake { color: var(--ok); }
+  .state-dormant { color: var(--muted); }
+  #message { min-height: 1.5em; color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">DROID CONSOLE</h1>
+  <p id="message"></p>
+
+  <section>
+    <h2>Status</h2>
+    <dl id="status"></dl>
+    <div>
+      <button data-post="/droid/api/wake">Wake up</button>
+      <button class="secondary" data-post="/droid/api/sleep">Go dormant</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Known faces</h2>
+    <p>Only face embeddings are stored, never pictures.</p>
+    <ul id="faces"></ul>
+  </section>
+
+  <section>
+    <h2>Memories</h2>
+    <p>Everything the droid keeps is text. Delete anything you do not want it to remember.</p>
+    <h3>Facts</h3><ul id="facts"></ul>
+    <h3>Recent sessions</h3><ul id="episodes"></ul>
+    <h3>Reminders</h3><ul id="reminders"></ul>
+    <h3>Diary</h3><ul id="diary"></ul>
+  </section>
+
+  <section>
+    <h2>Software</h2>
+    <p>Merged upgrades install automatically at night while the droid is dormant. The new version must report
+      healthy within five minutes, or the previous one is reinstalled.</p>
+    <button class="secondary" data-post="/droid/api/update-now"
+      data-confirm="Check for an upgrade now? If one exists the droid restarts to install it.">Check for upgrade now</button>
+  </section>
+
+  <section>
+    <h2>Factory reset</h2>
+    <p>Forgets the droid's name, settings, faces and memories, and starts the activation protocol again.</p>
+    <button class="danger" data-post="/droid/api/factory-reset"
+      data-confirm="Erase the droid's identity, faces and memories and restart activation?">Factory reset</button>
+  </section>
+
+  <div id="extra-sections"></div>
+</main>
+<script>
+  const message = document.getElementById("message");
+  const labels = {
+    droid_name: "Designation", owner_name: "Owner", activated: "Activated", dormant: "State",
+    activation_stage: "Activation stage", wake_phrase: "Wake phrase", in_view: "In view",
+    notifications: "Phone notifications",
+    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests",
+  };
+
+  function show(text) { message.textContent = text; }
+
+  async function call(path, body) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || response.statusText);
+    return payload;
+  }
+
+  function render(status) {
+    document.getElementById("title").textContent = `${status.droid_name} · DROID CONSOLE`;
+    const list = document.getElementById("status");
+    list.replaceChildren();
+    for (const [key, label] of Object.entries(labels)) {
+      if (!(key in status)) continue;
+      let value = status[key];
+      const dd = document.createElement("dd");
+      if (key === "dormant") {
+        value = value ? "dormant" : "awake";
+        dd.className = value === "awake" ? "state-awake" : "state-dormant";
+      } else if (typeof value === "boolean") {
+        value = value ? "yes" : "no";
+      }
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      dd.textContent = value === "" || value === null ? "—" : value;
+      list.append(dt, dd);
+    }
+  }
+
+  function renderFaces(names) {
+    const list = document.getElementById("faces");
+    list.replaceChildren();
+    if (!names.length) list.append(Object.assign(document.createElement("li"), { textContent: "None yet." }));
+    for (const name of names) {
+      const item = document.createElement("li");
+      const forget = document.createElement("button");
+      forget.className = "secondary";
+      forget.textContent = "Forget";
+      forget.dataset.post = `/droid/api/forget-face/${encodeURIComponent(name)}`;
+      forget.dataset.confirm = `Forget ${name}'s face?`;
+      item.append(`${name} `, forget);
+      list.append(item);
+    }
+  }
+
+  function renderList(id, items, format, deletePath) {
+    const list = document.getElementById(id);
+    list.replaceChildren();
+    if (!items.length) list.append(Object.assign(document.createElement("li"), { textContent: "Nothing yet." }));
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.append(format(item) + " ");
+      if (deletePath) {
+        const button = document.createElement("button");
+        button.className = "secondary";
+        button.textContent = "Delete";
+        button.dataset.post = deletePath(item);
+        button.dataset.confirm = "Delete this memory?";
+        li.append(button);
+      }
+      list.append(li);
+    }
+  }
+
+  async function refreshMemories() {
+    try {
+      const memories = await (await fetch("/droid/api/memories")).json();
+      renderList("facts", memories.facts, (f) => (f.subject ? `${f.subject}: ` : "") + f.text, (f) => `/droid/api/forget-fact/${f.id}`);
+      renderList("episodes", memories.episodes, (e) => `${e.when}: ${e.text}`, (e) => `/droid/api/forget-episode/${e.id}`);
+      renderList("reminders", memories.reminders, (r) => `${r.when}: ${r.text}`);
+      renderList("diary", memories.diary, (d) => `${d.day}: ${d.text}`);
+    } catch (error) {
+      show(`Cannot load memories: ${error.message}`);
+    }
+  }
+
+  async function refresh() {
+    try {
+      const response = await fetch("/droid/api/status");
+      const status = await response.json();
+      render(status);
+      renderFaces(status.known_faces || []);
+    } catch (error) {
+      show(`Cannot reach the droid: ${error.message}`);
+    }
+  }
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-post]");
+    if (!button) return;
+    if (button.dataset.confirm && !confirm(button.dataset.confirm)) return;
+    try {
+      const result = await call(button.dataset.post);
+      show(result.status || "Done.");
+      refresh();
+      refreshMemories();
+    } catch (error) {
+      show(error.message);
+    }
+  });
+
+  refresh();
+  refreshMemories();
+  setInterval(refresh, 3000);
+  setInterval(refreshMemories, 30000);
+</script>
+</body>
+</html>
