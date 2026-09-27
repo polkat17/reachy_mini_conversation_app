@@ -198,6 +198,12 @@ def run(
         camera_enabled=not args.no_camera,
     )
 
+    # Droid companion: its runtime follows every handler the app builds.
+    from reachy_mini_conversation_app.droid.runtime import DroidRuntime
+    from reachy_mini_conversation_app.droid.identity import is_droid_profile_active
+
+    droid_runtime = DroidRuntime(deps, instance_path) if is_droid_profile_active() else None
+
     def build_handler(startup_voice: Optional[str] = None) -> ConversationHandler:
         """Build a Hugging Face realtime handler for the current runtime config."""
         from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
@@ -209,11 +215,14 @@ def run(
             else "Hugging Face session proxy"
         )
         logger.info("Using Hugging Face realtime handler (%s)", transport_label)
-        return HuggingFaceRealtimeHandler(
+        new_handler = HuggingFaceRealtimeHandler(
             deps,
             instance_path=instance_path,
             startup_voice=startup_voice,
         )
+        if droid_runtime is not None:
+            droid_runtime.attach(new_handler)
+        return new_handler
 
     handler = build_handler(startup_settings.voice)
 

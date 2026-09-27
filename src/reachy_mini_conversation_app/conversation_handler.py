@@ -3,7 +3,8 @@ import time
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import ClassVar, TypeAlias
+from typing import Literal, ClassVar, TypeAlias
+from dataclasses import dataclass
 from collections.abc import Callable
 
 import numpy as np
@@ -21,6 +22,17 @@ logger = logging.getLogger(__name__)
 AudioFrame: TypeAlias = tuple[int, NDArray[np.int16]]
 HandlerOutput: TypeAlias = AudioFrame | AdditionalOutputs | None
 QueueItem: TypeAlias = AudioFrame | AdditionalOutputs
+ConversationEventKind: TypeAlias = Literal[
+    "session_started", "user_transcript", "assistant_transcript", "tool_call", "response_done"
+]
+
+
+@dataclass(frozen=True)
+class ConversationEvent:
+    """One conversation milestone; ``text`` holds the transcript or the tool name."""
+
+    kind: ConversationEventKind
+    text: str = ""
 
 
 class ConversationHandler(AsyncStreamHandler, ABC):
@@ -35,6 +47,7 @@ class ConversationHandler(AsyncStreamHandler, ABC):
     last_idle_behavior_time: float
     _activity_observer: Callable[[str], None] | None = None
     _transcript_observer: Callable[[str, str, bool], None] | None = None
+    _conversation_listener: Callable[[ConversationEvent], None] | None = None
 
     def __init__(self) -> None:
         """Initialize the stream handler and shared idle/activity tracking."""
@@ -50,8 +63,24 @@ class ConversationHandler(AsyncStreamHandler, ABC):
         """Attach/detach a transcript observer, called (role, text, final)."""
         self._transcript_observer = observer
 
+    def set_conversation_listener(self, listener: Callable[[ConversationEvent], None] | None) -> None:
+        """Attach/detach a listener for session, transcript, tool-call and response milestones."""
+        self._conversation_listener = listener
+
+    def _emit_conversation_event(self, kind: ConversationEventKind, text: str = "") -> None:
+        """Forward one conversation milestone to the listener, if attached."""
+        listener = self._conversation_listener
+        if listener is None:
+            return
+        try:
+            listener(ConversationEvent(kind, text))
+        except Exception as e:
+            logger.warning("Conversation listener failed on %s: %s", kind, e)
+
     def _emit_transcript(self, role: str, text: str, final: bool = True) -> None:
         """Forward one transcript chunk to the observer, if attached."""
+        if final and text and role in ("user", "assistant"):
+            self._emit_conversation_event("user_transcript" if role == "user" else "assistant_transcript", text)
         observer = self._transcript_observer
         if observer is not None and text:
             try:

@@ -228,3 +228,18 @@ async def test_play_emotion_queues_random_for_unknown_emotion(
     assert "play_emotion: 'contento' did not resolve; using random curated" in caplog.text
     queued_move = movement_manager.queue_move.call_args.args[0]
     assert queued_move.emotion_name == "confused1"
+
+
+@pytest.mark.parametrize(
+    ("intent", "available", "expected"),
+    [
+        ("curious", ["attentive2"], "attentive2"),
+        ("startled", ["surprised2"], "surprised2"),
+        ("worried", ["anxiety1"], "anxiety1"),
+        ("smug", ["success2"], "success2"),
+    ],
+)
+def test_droid_intents_resolve(intent: str, available: list[str], expected: str) -> None:
+    """Droid persona intents map onto recorded moves."""
+    assert intent in EMOTION_INTENTS
+    assert resolve_emotion_name(intent, available) == expected

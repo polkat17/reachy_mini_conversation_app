@@ -28,6 +28,7 @@ Conversational app for the Reachy Mini robot combining realtime voice, vision, p
 - [LLM tools](#llm-tools-exposed-to-the-assistant)
 - [Creating and adding tools](#creating-and-adding-tools)
 - [Advanced features](#advanced-features)
+- [Droid companion](#droid-companion)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -192,6 +193,7 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `stop_dance` | Clear queued dances. | Core install only. |
 | `play_emotion` | Play a recorded emotion clip via Hugging Face datasets. | Core install only. Uses the default open emotions dataset: [`pollen-robotics/reachy-mini-emotions-library`](https://huggingface.co/datasets/pollen-robotics/reachy-mini-emotions-library). |
 | `stop_emotion` | Clear queued emotions. | Core install only. |
+| `beep` | Play a synthesised droid beep sequence (affirmative, negative, happy, sad, curious, alarm, thinking, ...). | Core install only. Enabled in the `droid` profile. |
 | `camera` | Capture the latest camera frame and analyze it with the selected realtime backend. | Core install only. Requires the camera (disable with `--no-camera`). |
 | `idle_do_nothing` | Explicitly remain idle during an idle turn. Not intended for normal conversation turns. | Core install only. |
 | `move_head` | Queue a head pose change (left/right/up/down/front). | Core install only. |
@@ -401,6 +403,17 @@ reachy-mini-conversation-app --robot-name <name>
 `<name>` must match the daemon's `--robot-name` value so the app connects to the correct robot.
 
 </details>
+
+## Droid companion
+
+The `droid` profile turns Reachy Mini into a companion droid from the future. Select it in the UI or set
+`REACHY_MINI_CUSTOM_PROFILE=droid`. Its code lives in `src/reachy_mini_conversation_app/droid/`; the plan is in
+`DROID_ROADMAP.md`.
+
+- **Identity**: `core.yaml` in the app data folder (`<instance>/droid/core.yaml`) holds the droid's name, its
+  owner and its behaviour settings. It is hand-editable and injected into every session.
+- **Body language**: every spoken reply comes with an emote. When the model forgets to call `play_emotion` or
+  `beep`, the droid picks a fitting emotion itself.
 
 ## Contributing
 
