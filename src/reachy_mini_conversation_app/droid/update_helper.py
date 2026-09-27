@@ -16,6 +16,7 @@ import httpx
 from huggingface_hub import snapshot_download
 
 from reachy_mini_conversation_app.droid.updater import (
+    HEALTH_FILENAME,
     BOOT_DORMANT_FILENAME,
     change_titles,
     load_update_state,
@@ -90,9 +91,10 @@ def run_update(args: argparse.Namespace, daemon: Daemon) -> bool:
 
     def restart_and_check() -> bool:
         (data_dir / BOOT_DORMANT_FILENAME).touch()
-        started = time.time()
+        # Remove the old beacon so any beacon that appears comes from the version just started.
+        (data_dir / HEALTH_FILENAME).unlink(missing_ok=True)
         daemon.start(args.app)
-        return wait_until(lambda: health_beacon_time(data_dir) > started, _HEALTH_TIMEOUT_S)
+        return wait_until(lambda: health_beacon_time(data_dir) > 0, _HEALTH_TIMEOUT_S)
 
     daemon.stop()
     if not wait_until(lambda: not daemon.app_running(args.app), _STOP_TIMEOUT_S):
