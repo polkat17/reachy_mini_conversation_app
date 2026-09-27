@@ -143,6 +143,8 @@ class LocalStream:
         self._dormant = False
         self._wake_requested = asyncio.Event()
         self.audio_tap: Callable[[int, NDArray[Any]], None] | None = None
+        # Optional effect applied to assistant audio before it reaches the speaker (sample rate, float32 mono).
+        self.output_filter: Callable[[int, NDArray[np.float32]], NDArray[np.float32]] | None = None
         self._install_handler(handler)
 
     def _install_handler(self, handler: ConversationHandler) -> None:
@@ -950,7 +952,7 @@ class LocalStream:
                         )
 
             elif isinstance(handler_output, tuple):
-                _, audio_data = handler_output
+                output_sample_rate, audio_data = handler_output
 
                 # Skip empty audio frames
                 if audio_data.size == 0:
@@ -967,6 +969,8 @@ class LocalStream:
 
                 # Cast if needed
                 audio_frame = audio_to_float32(audio_data)
+                if self.output_filter is not None:
+                    audio_frame = self.output_filter(output_sample_rate, audio_frame.reshape(-1))
 
                 self._robot.media.push_audio_sample(audio_frame)
                 self._emit_level("assistant", audio_frame)

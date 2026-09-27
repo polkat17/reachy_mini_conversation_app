@@ -1,6 +1,7 @@
 import time
 import asyncio
 import dataclasses
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from reachy_mini_conversation_app.droid import runtime as runtime_mod
 from reachy_mini_conversation_app.droid.web import register_droid_routes
+from reachy_mini_conversation_app.droid.senses import SoundEvent
 from reachy_mini_conversation_app.droid.journal import SessionSummary
 from reachy_mini_conversation_app.droid.runtime import DroidRuntime
 from reachy_mini_conversation_app.droid.presence import PresenceEvent
@@ -40,6 +42,7 @@ class _FakeStream:
     def __init__(self) -> None:
         self.is_dormant = False
         self.audio_tap = None
+        self.output_filter = None
         self.asyncio_loop = None
 
     async def enter_dormant(self) -> None:
@@ -243,3 +246,54 @@ async def test_due_reminder_waits_for_session(tmp_path, monkeypatch: pytest.Monk
 
     runtime.say_event.assert_not_awaited()
     assert len(runtime.memory.pending_reminders()) == 1
+
+
+@pytest.mark.asyncio
+async def test_music_starts_a_dance_and_silence_stops_it(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Music makes an idle, activated droid dance; when it stops, the dance stops."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.identity.activated = True
+    runtime.handler = MagicMock(last_activity_time=0.0)
+    runtime._dance_tool = AsyncMock()  # type: ignore[method-assign]
+    runtime._stop_dance_tool = AsyncMock()  # type: ignore[method-assign]
+
+    await runtime._react_to_sound(SoundEvent("music_started", 0.6))
+    await runtime._react_to_sound(SoundEvent("music_stopped", 0.0))
+
+    runtime._dance_tool.assert_awaited_once()
+    runtime._stop_dance_tool.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cat_reaction_has_cooldown_and_counts_visits(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cat gets one greeting per cooldown, and visits are counted for the diary."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.identity.activated = True
+    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    await runtime._react_to_sound(SoundEvent("meow", 0.8))
+    await runtime._react_to_sound(SoundEvent("meow", 0.8))
+
+    runtime.say_event.assert_awaited_once()
+    assert "meowing" in runtime.say_event.await_args.args[0]
+    assert runtime.memory.get_state(f"cat_visits:{datetime.now():%Y-%m-%d}") == "1"
+
+
+def test_cat_is_not_a_person(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A cat in view does not keep the droid awake or lock memories away."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.presence = MagicMock()
+    runtime.presence.tracker.present.return_value = ["cat"]
+
+    assert runtime.people_in_view() == [] and runtime.someone_present() is False
+    assert runtime.memory_access_allowed() == (True, "")
+
+
+def test_voice_fx_is_installed_on_the_stream(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With voice FX on, the stream's output filter is the droid filter."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    chunk = np.full(800, 0.1, dtype=np.float32)
+
+    filtered = runtime.stream.output_filter(16000, chunk)  # type: ignore[union-attr]
+
+    assert filtered.shape == chunk.shape and not np.allclose(filtered, chunk)

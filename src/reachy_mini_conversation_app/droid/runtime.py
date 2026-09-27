@@ -18,8 +18,10 @@ from reachy_mini_conversation_app.streaming import AudioArray
 from reachy_mini_conversation_app.tools.beep import Beep
 from reachy_mini_conversation_app.droid.audio import LoudnessTrigger, to_mono_16k
 from reachy_mini_conversation_app.droid.faces import FaceRegistry
+from reachy_mini_conversation_app.tools.dance import Dance
 from reachy_mini_conversation_app.droid.emotes import EmoteGuard
 from reachy_mini_conversation_app.droid.notify import send_notification
+from reachy_mini_conversation_app.droid.senses import SoundEvent, SoundWatcher, SoundClassifier
 from reachy_mini_conversation_app.droid.context import OWNER_LAST_SEEN_KEY, mood_for, open_memory
 from reachy_mini_conversation_app.droid.journal import (
     CHECKPOINT_TURNS,
@@ -28,16 +30,19 @@ from reachy_mini_conversation_app.droid.journal import (
     write_diary_entry,
 )
 from reachy_mini_conversation_app.droid.identity import Identity, load_identity, save_identity, droid_data_dir
-from reachy_mini_conversation_app.droid.presence import STRANGER, PresenceEvent, PresenceSensor
+from reachy_mini_conversation_app.droid.presence import CAT, STRANGER, PresenceEvent, PresenceSensor
 from reachy_mini_conversation_app.droid.settings import DroidSettings
+from reachy_mini_conversation_app.droid.voice_fx import DroidVoiceFilter
 from reachy_mini_conversation_app.droid.autostart import ensure_autostart
 from reachy_mini_conversation_app.droid.idle_life import IdleLife, in_quiet_hours, idle_remark_prompt
-from reachy_mini_conversation_app.droid.reactions import presence_prompt, break_nudge_prompt
+from reachy_mini_conversation_app.droid.reactions import cat_prompt, presence_prompt, break_nudge_prompt
 from reachy_mini_conversation_app.tools.move_head import MoveHead
 from reachy_mini_conversation_app.droid.activation import ActivationProgress
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from reachy_mini_conversation_app.tools.stop_dance import StopDance
 from reachy_mini_conversation_app.droid.wake_phrase import WakePhraseSpotter
 from reachy_mini_conversation_app.tools.play_emotion import PlayEmotion
+from reachy_mini_conversation_app.dance_emotion_moves import GotoQueueMove
 from reachy_mini_conversation_app.conversation_handler import ConversationEvent, ConversationHandler
 
 
@@ -56,6 +61,8 @@ _AUDIO_QUEUE_FRAMES = 200
 _PRESENCE_INTERVAL_AWAKE_S = 1.0
 _PRESENCE_INTERVAL_DORMANT_S = 1.5
 _REMINDER_SESSION_GRACE_S = 60.0
+_CAT_REACTION_COOLDOWN_S = 600.0
+_TALKING_RECENTLY_S = 10.0
 
 
 class DroidRuntime:
@@ -76,6 +83,12 @@ class DroidRuntime:
         self._wake_test_hits = 0
         self._last_break_nudge_at = time.monotonic()
         self.memory = open_memory(instance_path)
+        self._sound_watcher: SoundWatcher | None = None
+        self._sound_loading = False
+        self._voice_filters: dict[int, DroidVoiceFilter] = {}
+        self._last_cat_reaction = float("-inf")
+        self._dance_tool = Dance()
+        self._stop_dance_tool = StopDance()
         self.journal = SessionJournal()
         self._checkpointing = False
         self._import_legacy_facts()
@@ -93,7 +106,11 @@ class DroidRuntime:
         self._last_user_turn_at = time.monotonic()
         self._loudness_trigger = LoudnessTrigger()
         self._audio_queue: queue.Queue[NDArray[np.float32]] = queue.Queue(maxsize=_AUDIO_QUEUE_FRAMES)
-        self._audio_listeners: list[AudioListener] = [self._wake_on_loud_speech, self._listen_for_wake_phrase]
+        self._audio_listeners: list[AudioListener] = [
+            self._wake_on_loud_speech,
+            self._listen_for_wake_phrase,
+            self._listen_for_sounds,
+        ]
         self._event_listeners: list[Callable[[ConversationEvent], None]] = [
             self._emote_guard.on_event,
             self._on_session_started,
@@ -114,6 +131,8 @@ class DroidRuntime:
         """Take over the stream's mic tap; the stream owns the session lifecycle."""
         self.stream = stream
         stream.audio_tap = self._tap_audio
+        if self.settings.voice_fx:
+            stream.output_filter = self._apply_voice_fx
 
     def start(self) -> None:
         """Start background work: autostart registration, audio listeners, and the tick loop."""
@@ -344,8 +363,8 @@ class DroidRuntime:
         return time.monotonic() - self._last_user_turn_at
 
     def someone_present(self) -> bool:
-        """Return whether anyone is currently in view."""
-        return self.presence is not None and bool(self.presence.tracker.present())
+        """Return whether any person is currently in view."""
+        return bool(self.people_in_view())
 
     def owner_in_view(self) -> bool:
         """Return whether the owner is currently recognised in view."""
@@ -355,8 +374,8 @@ class DroidRuntime:
         return any(person.is_owner and person.name in present for person in self.face_registry.people())
 
     def people_in_view(self) -> list[str]:
-        """Return the names in view (``stranger`` for unrecognised faces)."""
-        return [] if self.presence is None else self.presence.tracker.present()
+        """Return the people in view (``stranger`` for unrecognised faces); the cat is not a person."""
+        return [] if self.presence is None else [name for name in self.presence.tracker.present() if name != CAT]
 
     async def tick(self) -> None:
         """Run once per second: reminders, dormancy timeout, briefings, diary and idle life."""
@@ -375,6 +394,7 @@ class DroidRuntime:
         await self._deliver_due_reminders()
         await self._maybe_morning_briefing()
         await self._maybe_write_diary()
+        await self._maybe_keep_dancing()
         if not self.settings.idle_life or not self.deps.movement_manager.is_idle():
             return
         action = self._idle_life.next_action(idle_s, time.monotonic(), self.identity.protocols, datetime.now())
@@ -415,6 +435,10 @@ class DroidRuntime:
                 await self.wake("owner_seen")
             return
         if in_quiet_hours(self.identity.protocols.quiet_hours, datetime.now()):
+            return
+        if event.name == CAT:
+            if event.kind == "arrived":
+                await self.react_to_cat(heard=False)
             return
         if event.kind == "arrived" and event.name == STRANGER:
             await self._emotion_tool(self.deps, emotion="startled")
@@ -610,6 +634,89 @@ class DroidRuntime:
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         episodes = self.memory.episodes(limit=20, since=midnight)
         notes = [f"My mood today: {self.mood()}."]
+        cat_visits = int(self.memory.get_state(f"cat_visits:{now:%Y-%m-%d}", "0"))
+        if cat_visits:
+            notes.append(f"The cat visited me {cat_visits} times.")
         entry = await asyncio.to_thread(write_diary_entry, self.identity, episodes, notes)
         self.memory.write_diary(now.strftime("%Y-%m-%d"), entry)
         logger.info("Diary entry written for %s", now.strftime("%Y-%m-%d"))
+
+    # ---- senses and voice ------------------------------------------------------------
+
+    def _apply_voice_fx(self, sample_rate: int, chunk: NDArray[np.float32]) -> NDArray[np.float32]:
+        voice_filter = self._voice_filters.get(sample_rate)
+        if voice_filter is None:
+            voice_filter = self._voice_filters[sample_rate] = DroidVoiceFilter(sample_rate)
+        return voice_filter.process(chunk)
+
+    def _load_sound_watcher(self) -> None:
+        try:
+            self._sound_watcher = SoundWatcher(SoundClassifier().scores)
+        except (OSError, ValueError) as e:
+            logger.error("Sound classifier unavailable: %s", e)
+
+    def _listen_for_sounds(self, samples: NDArray[np.float32]) -> None:
+        if self.is_dormant:
+            return
+        if self._sound_watcher is None:
+            if not self._sound_loading:
+                self._sound_loading = True
+                threading.Thread(target=self._load_sound_watcher, daemon=True, name="droid-sounds-load").start()
+            return
+        for event in self._sound_watcher.feed(samples):
+            logger.info("Sound event: %s (%.2f)", event.kind, event.score)
+            self.submit(self._react_to_sound(event))
+
+    def _quiet_now(self) -> bool:
+        return in_quiet_hours(self.identity.protocols.quiet_hours, datetime.now())
+
+    async def _react_to_sound(self, event: SoundEvent) -> None:
+        if event.kind == "music_stopped":
+            await self._stop_dance_tool(self.deps)
+            return
+        if not self.identity.activated or self.is_dormant or self._quiet_now():
+            return
+        if event.kind == "meow":
+            await self.react_to_cat(heard=True)
+        elif event.kind == "music_started" and self.seconds_since_activity() >= _TALKING_RECENTLY_S:
+            await self.beep("happy")
+            await self._dance_tool(self.deps)
+
+    async def _maybe_keep_dancing(self) -> None:
+        watcher = self._sound_watcher
+        if watcher is None or not watcher.music_playing or not self.identity.activated or self._quiet_now():
+            return
+        if self.seconds_since_activity() >= _TALKING_RECENTLY_S and self.deps.movement_manager.is_idle():
+            await self._dance_tool(self.deps)
+
+    async def react_to_cat(self, *, heard: bool) -> None:
+        """Greet the cat: glance at it, trill, and say something kind (at most every ten minutes)."""
+        now = time.monotonic()
+        if now - self._last_cat_reaction < _CAT_REACTION_COOLDOWN_S or self._quiet_now():
+            return
+        self._last_cat_reaction = now
+        visits_key = f"cat_visits:{datetime.now():%Y-%m-%d}"
+        self.memory.set_state(visits_key, str(int(self.memory.get_state(visits_key, "0")) + 1))
+        cat = self.presence.last_cat if self.presence is not None else None
+        if not heard and cat is not None:
+            await asyncio.to_thread(self.look_at_pixel, cat.u, cat.v)
+        await self.beep("trill")
+        await self.say_event(cat_prompt(self.identity, heard=heard))
+
+    def look_at_pixel(self, u: int, v: int, duration_s: float = 1.5) -> None:
+        """Glide the head towards a camera pixel through the movement queue."""
+        robot = self.deps.reachy_mini
+        try:
+            target = robot.look_at_image(u, v, duration=duration_s, perform_movement=False)
+            _, antennas = robot.get_current_joint_positions()
+            self.deps.movement_manager.queue_move(
+                GotoQueueMove(
+                    target_head_pose=target,
+                    start_head_pose=robot.get_current_head_pose(),
+                    target_antennas=(antennas[0], antennas[1]),
+                    start_antennas=(antennas[0], antennas[1]),
+                    duration=duration_s,
+                )
+            )
+        except Exception as e:
+            logger.warning("Could not look at pixel (%d, %d): %s", u, v, e)

@@ -12,11 +12,14 @@ from numpy.typing import NDArray
 
 from reachy_mini.vision.face_detector import Face, FaceDetector
 from reachy_mini_conversation_app.droid.faces import FaceEmbedder, FaceRegistry
+from reachy_mini_conversation_app.droid.senses import CatDetector, CatSighting
 
 
 logger = logging.getLogger(__name__)
 
 STRANGER = "stranger"
+CAT = "cat"
+_CAT_CHECK_EVERY = 3  # frames; the cat detector is the heavier model
 _MAX_FACES_PER_FRAME = 3
 _MIN_FACE_WIDTH_PX = 40
 
@@ -97,8 +100,9 @@ class PresenceSensor:
         registry: FaceRegistry,
         on_event: Callable[[PresenceEvent], None],
         interval_s: Callable[[], float],
+        watch_cats: bool = True,
     ) -> None:
-        """Configure the frame source, known faces, event callback and polling interval."""
+        """Configure the frame source, known faces, event callback, polling interval and cat watching."""
         self._get_frame = get_frame
         self.registry = registry
         self._on_event = on_event
@@ -108,6 +112,10 @@ class PresenceSensor:
         self._stop = threading.Event()
         self._detector: FaceDetector | None = None
         self._embedder: FaceEmbedder | None = None
+        self._watch_cats = watch_cats
+        self._cat_detector: CatDetector | None = None
+        self._frames_seen = 0
+        self.last_cat: CatSighting | None = None
 
     def start(self) -> None:
         """Run the camera loop on a daemon thread."""
@@ -151,6 +159,17 @@ class PresenceSensor:
         for face in self._faces(frame):
             person, _score = self.registry.identify(embedder.embed(frame, face))
             sightings.append(Sighting(person.name, person.is_owner) if person else Sighting(STRANGER))
+        self._frames_seen += 1
+        if self._watch_cats and self._frames_seen % _CAT_CHECK_EVERY == 0:
+            if self._cat_detector is None:
+                self._cat_detector = CatDetector()
+            cats = self._cat_detector.detect(frame)
+            if cats:
+                self.last_cat = cats[0]
+                sightings.append(Sighting(CAT))
+        elif self._watch_cats and CAT in self.tracker.present():
+            # Between cat checks, keep a present cat's track alive.
+            sightings.append(Sighting(CAT))
         return sightings
 
     def capture_embeddings(

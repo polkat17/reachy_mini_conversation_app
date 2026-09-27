@@ -449,6 +449,13 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 - **Daily rhythm**: a morning briefing on the first sighting of the owner before noon (weather, today's
   reminders, a callback to the last session), a mood that drifts with how often it sees its owner, reminders
   that wake it and fall back to a phone notification, and a diary entry written at 23:00.
+- **Senses**: a YAMNet sound classifier (ONNX) listens for music, which makes the droid dance while nobody
+  is talking, and for meows. An SSD-MobileNet detector (ONNX) spots the cat on camera. The droid glances at
+  the cat, trills, and talks to it by its household name, at most every ten minutes, and counts its visits for
+  the diary. Show and tell uses the camera tool: hold something up and ask it to look.
+- **Voice filter**: the speaker output goes through a streaming droid filter (band-pass, light ring
+  modulation, a short metallic resonance). It is causal, adding no buffering and well under a millisecond of
+  processing per 50 ms chunk. Turn it off with `DROID_VOICE_FX=0`.
 - **Control page**: `http://<robot>:7860/droid` shows the droid's state, wake and sleep buttons, known faces
   (with "forget"), and a factory reset that restarts activation.
 
@@ -457,6 +464,7 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 | `DROID_DORMANT_AFTER_MINUTES` | Minutes without anyone talking or in view before going dormant. Default `20`; `0` disables. |
 | `DROID_AUTOSTART` | Register this app as the daemon's startup app. Default on. |
 | `DROID_IDLE_LIFE` | Idle behaviours while nobody is talking. Default on. |
+| `DROID_VOICE_FX` | Droid voice filter on the speaker output. Default on. |
 | `DROID_SUMMARY_MODEL` | Hugging Face model for session summaries and the diary. Default `Qwen/Qwen2.5-7B-Instruct`; uses `HF_TOKEN`. |
 | `DROID_NTFY_TOPIC` / `DROID_NTFY_SERVER` | Phone notifications through [ntfy](https://ntfy.sh): subscribe to the same private topic in the ntfy app. |
 

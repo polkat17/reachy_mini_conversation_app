@@ -1141,3 +1141,29 @@ async def test_record_loop_feeds_audio_tap_even_while_dormant() -> None:
 
     assert tapped == [16000]
     handler.receive.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_play_loop_applies_output_filter() -> None:
+    """Assistant audio passes through the output filter before reaching the speaker."""
+    handler = MagicMock()
+    frame = np.full((1, 160), 1000, dtype=np.int16)
+    stream = LocalStream(handler, MagicMock())
+    seen: list[tuple[int, int]] = []
+
+    async def emit_once() -> Any:
+        stream._stop_event.set()
+        return (16000, frame)
+
+    def halve(sample_rate: int, chunk: Any) -> Any:
+        seen.append((sample_rate, chunk.ndim))
+        return chunk * 0.5
+
+    handler.emit = emit_once
+    stream.output_filter = halve
+
+    await stream.play_loop()
+
+    pushed = stream._robot.media.push_audio_sample.call_args.args[0]
+    assert seen == [(16000, 1)]
+    assert np.allclose(pushed, 1000 / 32768.0 * 0.5)

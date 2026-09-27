@@ -1,7 +1,7 @@
 """What the droid says when its sensors notice something: pure functions returning ``[SYSTEM EVENT]`` prompts."""
 
 from reachy_mini_conversation_app.droid.identity import Identity
-from reachy_mini_conversation_app.droid.presence import STRANGER, PresenceEvent
+from reachy_mini_conversation_app.droid.presence import CAT, STRANGER, PresenceEvent
 
 
 WELCOME_BACK_AFTER_S = 10 * 60.0
@@ -16,9 +16,26 @@ def _duration(seconds: float) -> str:
     return f"{hours} hours" if minutes < 10 else f"{hours} hours {minutes} minutes"
 
 
+def cat_names(identity: Identity) -> str:
+    """Return how to refer to the household cat(s)."""
+    names = [member.name for member in identity.household if member.kind.lower() in ("cat", "kitten")]
+    return " or ".join(names) if names else "the cat"
+
+
+def cat_prompt(identity: Identity, *, heard: bool) -> str:
+    """Return the sensor event for noticing the cat."""
+    sense = "You hear meowing: probably" if heard else "You see"
+    return (
+        f"[SYSTEM EVENT] {sense} {cat_names(identity)}. Talk to the cat in one or two short, gentle, playful lines "
+        "(droids are fond of cats). Keep your movements small and slow so you do not startle it."
+    )
+
+
 def presence_prompt(event: PresenceEvent, identity: Identity) -> str | None:
     """Return the sensor event to voice for a presence change, or None to stay quiet."""
     owner = identity.owner_name
+    if event.name == CAT:
+        return cat_prompt(identity, heard=False) if event.kind == "arrived" else None
     if event.kind == "arrived":
         if event.name == STRANGER:
             return (
