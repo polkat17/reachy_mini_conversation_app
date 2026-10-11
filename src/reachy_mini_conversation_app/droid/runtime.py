@@ -23,6 +23,7 @@ from reachy_mini_conversation_app.tools.dance import Dance
 from reachy_mini_conversation_app.droid.emotes import EmoteGuard
 from reachy_mini_conversation_app.droid.notify import send_notification
 from reachy_mini_conversation_app.droid.senses import SoundEvent, SoundWatcher, SoundClassifier
+from reachy_mini_conversation_app.droid.antenna import AntennaFlickDetector
 from reachy_mini_conversation_app.droid.context import OWNER_LAST_SEEN_KEY, mood_for, open_memory
 from reachy_mini_conversation_app.droid.journal import (
     CHECKPOINT_TURNS,
@@ -67,8 +68,8 @@ LifecycleHook = Callable[[str], Awaitable[None]]
 _TICK_INTERVAL_S = 1.0
 _GOODBYE_GRACE_S = 4.0
 _AUDIO_QUEUE_FRAMES = 200
-_PRESENCE_INTERVAL_AWAKE_S = 1.0
-_PRESENCE_INTERVAL_DORMANT_S = 1.5
+_ANTENNA_POLL_S = 0.1
+_ANTENNA_SETTLE_S = 2.0  # ignore the antennas while the sleep move finishes
 _REMINDER_SESSION_GRACE_S = 60.0
 _CAT_REACTION_COOLDOWN_S = 600.0
 _TALKING_RECENTLY_S = 10.0
@@ -93,6 +94,7 @@ class DroidRuntime:
         self._wake_test_active = False
         self._wake_test_hits = 0
         self._last_break_nudge_at = time.monotonic()
+        self._antenna_detector = AntennaFlickDetector()
         self.memory = open_memory(instance_path)
         self._sound_watcher: SoundWatcher | None = None
         self._sound_loading = False
@@ -157,9 +159,12 @@ class DroidRuntime:
                 self.deps.reachy_mini.media.get_frame,
                 self.face_registry,
                 self._on_presence_event,
-                lambda: _PRESENCE_INTERVAL_DORMANT_S if self.is_dormant else _PRESENCE_INTERVAL_AWAKE_S,
+                self._presence_interval_s,
+                watch_cats=self.settings.watch_cats,
             )
             self.presence.start()
+        if self.settings.antenna_wake:
+            threading.Thread(target=self._watch_antennas, daemon=True, name="droid-antennas").start()
         threading.Thread(target=self._start_tick_loop_when_ready, daemon=True, name="droid-tick-start").start()
 
     def stop(self) -> None:
@@ -673,7 +678,7 @@ class DroidRuntime:
             logger.error("Sound classifier unavailable: %s", e)
 
     def _listen_for_sounds(self, samples: NDArray[np.float32]) -> None:
-        if self.is_dormant:
+        if self.is_dormant or not self.settings.listen_for_sounds:
             return
         if self._sound_watcher is None:
             if not self._sound_loading:
@@ -793,3 +798,31 @@ class DroidRuntime:
             f"[SYSTEM EVENT] You were upgraded while dormant. New changes: {changes}. Announce your new "
             "capabilities in one or two proud lines."
         )
+
+    # ---- CM4 load and the antenna button --------------------------------------------
+
+    def _presence_interval_s(self) -> float:
+        # Looking less often while dormant or while someone is already in view keeps the CM4 cool; departures
+        # only count after 90 s of absence, so a slower check loses nothing.
+        base = self.settings.presence_interval_s
+        return base * 1.5 if self.is_dormant or self.someone_present() else base
+
+    def _watch_antennas(self) -> None:
+        robot = self.deps.reachy_mini
+        dormant_since: float | None = None
+        while not self._stop.wait(_ANTENNA_POLL_S):
+            if not self.is_dormant:
+                dormant_since = None
+                self._antenna_detector.reset()
+                continue
+            dormant_since = dormant_since or time.monotonic()
+            if time.monotonic() - dormant_since < _ANTENNA_SETTLE_S:
+                continue
+            try:
+                _, antennas = robot.get_current_joint_positions()
+            except Exception as e:
+                logger.debug("Could not read the antennas: %s", e)
+                continue
+            if antennas is not None and self._antenna_detector.update((float(antennas[0]), float(antennas[1]))):
+                logger.info("Antenna flicked; waking up")
+                self.request_wake("antenna")

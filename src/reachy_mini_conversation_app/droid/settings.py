@@ -37,6 +37,10 @@ class DroidSettings:
     home_assistant_token: str
     update_space: str
     auto_update: bool
+    presence_interval_s: float
+    watch_cats: bool
+    listen_for_sounds: bool
+    antenna_wake: bool
 
     @classmethod
     def from_env(cls) -> "DroidSettings":
@@ -54,4 +58,9 @@ class DroidSettings:
             home_assistant_token=(os.getenv("DROID_HOME_ASSISTANT_TOKEN") or "").strip(),
             update_space=(os.getenv("DROID_UPDATE_SPACE") or "").strip(),
             auto_update=_env_flag("DROID_AUTO_UPDATE", default=True),
+            # Defaults sized for the Wireless robot's CM4: the camera loop sleeps 2 s between looks.
+            presence_interval_s=max(0.5, _env_float("DROID_PRESENCE_INTERVAL_S", 2.0)),
+            watch_cats=_env_flag("DROID_WATCH_CATS", default=True),
+            listen_for_sounds=_env_flag("DROID_LISTEN_FOR_SOUNDS", default=True),
+            antenna_wake=_env_flag("DROID_ANTENNA_WAKE", default=True),
         )

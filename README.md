@@ -426,7 +426,7 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
   `beep`, the droid picks a fitting emotion itself.
 - **Always on**: the droid never stops itself. `go_to_sleep`, the web page and inactivity put it in *dormant*
   mode: sleep pose, realtime session closed, but the app keeps listening and watching so it can wake again.
-  Before a wake phrase is set, any sustained speech wakes it. On start it registers itself as the robot's
+  Flicking an antenna wakes it, and before a wake phrase is set, any sustained speech does too. On start it registers itself as the robot's
   startup app. The wireless robot boots asleep, so after power-on flick an antenna (or wake the robot from the
   dashboard) and the droid boots.
 - **Idle life**: while nobody is talking it glances around, beeps to itself and now and then makes a remark,
@@ -478,6 +478,9 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 | `DROID_AUTOSTART` | Register this app as the daemon's startup app. Default on. |
 | `DROID_IDLE_LIFE` | Idle behaviours while nobody is talking. Default on. |
 | `DROID_VOICE_FX` | Droid voice filter on the speaker output. Default on. |
+| `DROID_PRESENCE_INTERVAL_S` | Seconds between camera looks for faces and the cat. Default `2`, sized for the Wireless robot's CM4. |
+| `DROID_WATCH_CATS` / `DROID_LISTEN_FOR_SOUNDS` | Switch off cat detection or the music and meow classifier to save CPU. Default on. |
+| `DROID_ANTENNA_WAKE` | Flicking an antenna wakes a dormant droid. Default on. |
 | `DROID_GITHUB_REPO` / `DROID_GITHUB_TOKEN` | Where upgrade requests are filed; the token needs only issue access. |
 | `DROID_UPDATE_SPACE` / `DROID_AUTO_UPDATE` | The Hugging Face Space mirroring `main`, and whether to install newer revisions at night. |
 | `DROID_HOME_ASSISTANT_URL` / `DROID_HOME_ASSISTANT_TOKEN` | Home Assistant address and long-lived access token. |
