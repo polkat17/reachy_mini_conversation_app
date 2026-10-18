@@ -37,6 +37,7 @@ class DroidSettings:
     home_assistant_token: str
     update_space: str
     auto_update: bool
+    day_review_dataset: str
     presence_interval_s: float
     watch_cats: bool
     listen_for_sounds: bool
@@ -58,6 +59,7 @@ class DroidSettings:
             home_assistant_token=(os.getenv("DROID_HOME_ASSISTANT_TOKEN") or "").strip(),
             update_space=(os.getenv("DROID_UPDATE_SPACE") or "").strip(),
             auto_update=_env_flag("DROID_AUTO_UPDATE", default=True),
+            day_review_dataset=(os.getenv("DROID_DAY_REVIEW_DATASET") or "").strip(),
             # Defaults sized for the Wireless robot's CM4: the camera loop sleeps 2 s between looks.
             presence_interval_s=max(0.5, _env_float("DROID_PRESENCE_INTERVAL_S", 2.0)),
             watch_cats=_env_flag("DROID_WATCH_CATS", default=True),

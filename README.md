@@ -202,6 +202,7 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `forget_memory` | Find memories, read them back, and delete only the confirmed ones. | `droid` profile only. |
 | `reminder` | Set, list or cancel reminders and timers. | `droid` profile only. |
 | `read_diary` | Read the droid's nightly diary entry. | `droid` profile only. |
+| `day_review` | Read today's prioritised review of the owner's meetings and email, prepared each weekday morning by a Claude routine. | `droid` profile only. Requires `DROID_DAY_REVIEW_DATASET`; also used in the morning briefing. |
 | `request_upgrade` | List or file upgrade requests (GitHub issues labelled `droid-upgrade`). | `droid` profile only. Requires `DROID_GITHUB_REPO` and `DROID_GITHUB_TOKEN`. |
 | `home_control` | List, turn on, turn off or toggle Home Assistant lights, switches, fans, scenes, scripts and media players. | `droid` profile only. Requires `DROID_HOME_ASSISTANT_URL` and `DROID_HOME_ASSISTANT_TOKEN`. Locks and alarms are never exposed. |
 | `camera` | Capture the latest camera frame and analyze it with the selected realtime backend. | Core install only. Requires the camera (disable with `--no-camera`). |

@@ -48,6 +48,7 @@ from k3_droid.droid.idle_life import IdleLife, in_quiet_hours, idle_remark_promp
 from k3_droid.droid.reactions import cat_prompt, presence_prompt, break_nudge_prompt
 from k3_droid.tools.move_head import MoveHead
 from k3_droid.droid.activation import ActivationProgress
+from k3_droid.droid.day_review import briefing_line, fetch_day_review
 from k3_droid.tools.core_tools import ToolDependencies
 from k3_droid.tools.stop_dance import StopDance
 from k3_droid.droid.wake_phrase import WakePhraseSpotter
@@ -75,6 +76,7 @@ _CAT_REACTION_COOLDOWN_S = 600.0
 _TALKING_RECENTLY_S = 10.0
 _UPDATE_CHECK_INTERVAL_S = 20 * 3600.0
 _UPDATE_HOURS = range(2, 6)
+_DAY_REVIEW_RECHECK_S = 600.0
 
 
 class DroidRuntime:
@@ -88,6 +90,8 @@ class DroidRuntime:
         self.identity: Identity = load_identity(instance_path)
         self.data_dir = droid_data_dir(instance_path)
         self.face_registry = FaceRegistry(self.data_dir)
+        self._day_review: dict[str, Any] | None = None
+        self._day_review_checked_at: float | None = None
         self.presence: PresenceSensor | None = None
         self.wake_spotter = WakePhraseSpotter(self.data_dir / "models")
         self.activation = ActivationProgress(self.data_dir)
@@ -639,13 +643,33 @@ class DroidRuntime:
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         today_reminders = [r.text for r in self.memory.pending_reminders() if r.due_at < midnight + 86400]
         yesterday = self.memory.episodes(limit=1)
+        review = await asyncio.to_thread(self.day_review)
         await self.say_event(
             f"[SYSTEM EVENT] Morning briefing for {self.identity.owner_name}, first sighting today. In three short "
             "lines: greet them, give today's weather with your weather tool, then mention "
             + (f"today's reminders ({'; '.join(today_reminders)})" if today_reminders else "that nothing is scheduled")
             + (f", and one callback to the last session: {yesterday[0].summary}" if yesterday else "")
             + "."
+            + (
+                " Then add a short review of their day, most important first, and offer details with your "
+                f"day_review tool: {briefing_line(review)}"
+                if review is not None
+                else ""
+            )
         )
+
+    def day_review(self) -> dict[str, Any] | None:
+        """Return today's review written by the Claude routine, re-checking the dataset at most every 10 minutes."""
+        dataset = DroidSettings.from_env().day_review_dataset
+        if not dataset:
+            return None
+        now = time.monotonic()
+        today = datetime.now().date()
+        if self._day_review_checked_at is None or now - self._day_review_checked_at >= _DAY_REVIEW_RECHECK_S:
+            self._day_review = fetch_day_review(dataset, config.HF_TOKEN, today)
+            self._day_review_checked_at = now
+        review = self._day_review
+        return review if review is not None and review.get("date") == today.isoformat() else None
 
     async def _maybe_write_diary(self) -> None:
         now = datetime.now()

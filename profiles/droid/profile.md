@@ -26,6 +26,7 @@ default_tools = [
   "list_memories",
   "reminder",
   "read_diary",
+  "day_review",
   "request_upgrade",
   "home_control",
   "pollen_robotics_reachy_mini_search_tool__search_web",
