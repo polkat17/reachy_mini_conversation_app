@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.tools import home_control as home_control_mod
-from reachy_mini_conversation_app.tools import request_upgrade as request_upgrade_mod
-from reachy_mini_conversation_app.droid.home import Device
-from reachy_mini_conversation_app.droid.settings import DroidSettings
-from reachy_mini_conversation_app.droid.upgrades import UpgradeRequest
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from k3_droid.tools import home_control as home_control_mod
+from k3_droid.tools import request_upgrade as request_upgrade_mod
+from k3_droid.droid.home import Device
+from k3_droid.droid.settings import DroidSettings
+from k3_droid.droid.upgrades import UpgradeRequest
+from k3_droid.tools.core_tools import ToolDependencies
 
 
 def _deps(tmp_path: Path, **settings: str) -> ToolDependencies:

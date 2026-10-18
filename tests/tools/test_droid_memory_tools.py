@@ -8,15 +8,15 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from reachy_mini_conversation_app.droid import context as context_mod
-from reachy_mini_conversation_app.tools.recall import Recall
-from reachy_mini_conversation_app.droid.runtime import DroidRuntime
-from reachy_mini_conversation_app.tools.memorize import Memorize
-from reachy_mini_conversation_app.tools.reminder import Reminder, due_time
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
-from reachy_mini_conversation_app.tools.read_diary import ReadDiary
-from reachy_mini_conversation_app.tools.forget_memory import ForgetMemory
-from reachy_mini_conversation_app.tools.list_memories import ListMemories
+from k3_droid.droid import context as context_mod
+from k3_droid.tools.recall import Recall
+from k3_droid.droid.runtime import DroidRuntime
+from k3_droid.tools.memorize import Memorize
+from k3_droid.tools.reminder import Reminder, due_time
+from k3_droid.tools.core_tools import ToolDependencies
+from k3_droid.tools.read_diary import ReadDiary
+from k3_droid.tools.forget_memory import ForgetMemory
+from k3_droid.tools.list_memories import ListMemories
 
 
 class _WordEmbedder:

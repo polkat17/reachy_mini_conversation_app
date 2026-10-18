@@ -1,13 +1,13 @@
 import time
 from pathlib import Path
 
-from reachy_mini_conversation_app.droid.context import (
+from k3_droid.droid.context import (
     MEMORY_CHAR_BUDGET,
     OWNER_LAST_SEEN_KEY,
     open_memory,
     format_memory_block,
 )
-from reachy_mini_conversation_app.droid.identity import Identity
+from k3_droid.droid.identity import Identity
 
 
 def test_memory_block_respects_consent(tmp_path: Path) -> None:

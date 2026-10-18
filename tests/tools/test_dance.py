@@ -2,9 +2,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.tools import dance as dance_module
-from reachy_mini_conversation_app.tools.dance import Dance, get_available_dances_and_descriptions
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from k3_droid.tools import dance as dance_module
+from k3_droid.tools.dance import Dance, get_available_dances_and_descriptions
+from k3_droid.tools.core_tools import ToolDependencies
 
 
 class _FakeDanceQueueMove:

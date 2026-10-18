@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from reachy_mini_conversation_app.droid import journal as journal_mod
-from reachy_mini_conversation_app.droid.llm import parse_json_object
-from reachy_mini_conversation_app.droid.mood import MoodInputs, current_mood
-from reachy_mini_conversation_app.droid.journal import SessionJournal, summarize_session, write_diary_entry
-from reachy_mini_conversation_app.droid.identity import Identity
+from k3_droid.droid import journal as journal_mod
+from k3_droid.droid.llm import parse_json_object
+from k3_droid.droid.mood import MoodInputs, current_mood
+from k3_droid.droid.journal import SessionJournal, summarize_session, write_diary_entry
+from k3_droid.droid.identity import Identity
 
 
 LINES = [("user", "My sister Anna visits on Friday."), ("assistant", "Noted. I will polish my antennas.")]

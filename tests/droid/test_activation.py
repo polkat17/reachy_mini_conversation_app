@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from reachy_mini_conversation_app import prompts as prompts_mod
-from reachy_mini_conversation_app.config import config
-from reachy_mini_conversation_app.droid.identity import Identity, save_identity
-from reachy_mini_conversation_app.droid.activation import (
+from k3_droid import prompts as prompts_mod
+from k3_droid.config import config
+from k3_droid.droid.identity import Identity, save_identity
+from k3_droid.droid.activation import (
     STAGE_IDS,
     ActivationError,
     ActivationProgress,

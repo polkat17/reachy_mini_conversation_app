@@ -5,9 +5,9 @@ from typing import Any
 import httpx
 import pytest
 
-from reachy_mini_conversation_app.droid import home as home_mod
-from reachy_mini_conversation_app.droid.home import Device, HomeError, HomeAssistant, match_device
-from reachy_mini_conversation_app.droid.settings import DroidSettings
+from k3_droid.droid import home as home_mod
+from k3_droid.droid.home import Device, HomeError, HomeAssistant, match_device
+from k3_droid.droid.settings import DroidSettings
 
 
 STATES = [

@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.tools.beep import Beep
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from k3_droid.tools.beep import Beep
+from k3_droid.tools.core_tools import ToolDependencies
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from reachy_mini_conversation_app import daemon_api
+from k3_droid import daemon_api
 
 
 class _FakeResponse:

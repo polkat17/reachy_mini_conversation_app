@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 import numpy as np
 import pytest
 
-from reachy_mini_conversation_app.droid.runtime import DroidRuntime
-from reachy_mini_conversation_app.droid.identity import load_identity
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
-from reachy_mini_conversation_app.tools.enroll_face import EnrollFace
-from reachy_mini_conversation_app.tools.activation_step import ActivationStep
-from reachy_mini_conversation_app.tools.background_tool_manager import ToolCallRoutine
+from k3_droid.droid.runtime import DroidRuntime
+from k3_droid.droid.identity import load_identity
+from k3_droid.tools.core_tools import ToolDependencies
+from k3_droid.tools.enroll_face import EnrollFace
+from k3_droid.tools.activation_step import ActivationStep
+from k3_droid.tools.background_tool_manager import ToolCallRoutine
 
 
 @pytest.fixture

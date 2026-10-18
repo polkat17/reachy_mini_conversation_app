@@ -1,0 +1,79 @@
+"""Resolve active profile prompts and voice settings."""
+
+import logging
+from pathlib import Path
+
+from k3_droid.config import config, get_default_voice
+from k3_droid.memory import format_memory_for_prompt
+from k3_droid.droid.context import build_droid_context, build_droid_greeting
+from k3_droid.profile_store import (
+    DEFAULT_PROFILE_NAME,
+    ProfileDefinition,
+    ProfileFormatError,
+    read_profile,
+    read_packaged_default_profile,
+)
+from k3_droid.droid.identity import DROID_PROFILE_NAME
+
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_GREETING_PROMPT = (
+    "Start the conversation now with a brief, spontaneous greeting in character. "
+    "Keep it to one sentence, invite the user in naturally, and vary the wording each time."
+)
+
+
+def _active_profile() -> ProfileDefinition:
+    return read_profile(config.REACHY_MINI_CUSTOM_PROFILE)
+
+
+def get_session_instructions(instance_path: str | Path | None = None) -> str:
+    """Return instructions for the active profile with memory context."""
+    selected_profile = config.REACHY_MINI_CUSTOM_PROFILE
+    profile_name = selected_profile or DEFAULT_PROFILE_NAME
+    try:
+        profile = _active_profile()
+        instructions = profile.instructions.strip()
+    except (FileNotFoundError, ProfileFormatError) as exc:
+        logger.warning("Failed to load profile %r: %s", profile_name, exc)
+        instructions = ""
+
+    if not instructions and selected_profile and selected_profile != DEFAULT_PROFILE_NAME:
+        logger.warning("Using bundled default instructions because profile %r is incomplete", selected_profile)
+        try:
+            instructions = read_packaged_default_profile().instructions.strip()
+        except (FileNotFoundError, ProfileFormatError) as exc:
+            raise RuntimeError("Default profile has no usable instructions") from exc
+    if not instructions:
+        raise RuntimeError("Default profile has no usable instructions")
+
+    # Droid companion: its identity, memories and mood replace the generic memory block.
+    if profile_name == DROID_PROFILE_NAME:
+        memory_prompt = build_droid_context(instance_path)
+    else:
+        memory_prompt = format_memory_for_prompt(instance_path)
+    if memory_prompt:
+        return f"{memory_prompt}\n\n{instructions}"
+    return instructions
+
+
+def get_session_voice(default: str | None = None) -> str:
+    """Return the active profile voice or the backend default."""
+    fallback = get_default_voice() if default is None else default
+    try:
+        return _active_profile().voice or fallback
+    except (FileNotFoundError, ProfileFormatError) as exc:
+        logger.warning("Failed to load the active profile voice: %s", exc)
+        return fallback
+
+
+def get_session_greeting_prompt() -> str:
+    """Return the active profile greeting prompt or the app default."""
+    if config.REACHY_MINI_CUSTOM_PROFILE == DROID_PROFILE_NAME:
+        return build_droid_greeting(config.INSTANCE_PATH)
+    try:
+        return _active_profile().greeting or DEFAULT_GREETING_PROMPT
+    except (FileNotFoundError, ProfileFormatError) as exc:
+        logger.warning("Failed to load the active profile greeting: %s", exc)
+        return DEFAULT_GREETING_PROMPT

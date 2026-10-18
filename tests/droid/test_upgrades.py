@@ -5,9 +5,9 @@ from typing import Any
 import httpx
 import pytest
 
-from reachy_mini_conversation_app.droid import upgrades as upgrades_mod
-from reachy_mini_conversation_app.droid.identity import Identity
-from reachy_mini_conversation_app.droid.settings import DroidSettings
+from k3_droid.droid import upgrades as upgrades_mod
+from k3_droid.droid.identity import Identity
+from k3_droid.droid.settings import DroidSettings
 
 
 def _settings() -> DroidSettings:

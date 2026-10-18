@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from reachy_mini.vision.face_detector import Face
-from reachy_mini_conversation_app.droid.faces import (
+from k3_droid.droid.faces import (
     _TEMPLATE,
     MATCH_THRESHOLD,
     MAX_EMBEDDINGS_PER_PERSON,

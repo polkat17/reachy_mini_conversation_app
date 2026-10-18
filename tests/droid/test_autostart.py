@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.droid import autostart as autostart_mod
-from reachy_mini_conversation_app.daemon_api import DaemonApiError
+from k3_droid.droid import autostart as autostart_mod
+from k3_droid.daemon_api import DaemonApiError
 
 
 def _fake_daemon(responses: dict[str, Any], calls: list[tuple[str, str, Any]]) -> Any:

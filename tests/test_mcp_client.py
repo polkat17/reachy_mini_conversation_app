@@ -7,7 +7,7 @@ pytest.importorskip("mcp.types")
 
 from mcp.types import Tool, TextContent, CallToolResult
 
-from reachy_mini_conversation_app.mcp_client import (
+from k3_droid.mcp_client import (
     RemoteToolSpec,
     RemoteToolCallResponse,
     validate_http_mcp_url,

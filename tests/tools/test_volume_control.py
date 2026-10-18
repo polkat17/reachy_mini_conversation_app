@@ -2,9 +2,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.tools import volume_control as volume_control_module
-from reachy_mini_conversation_app.daemon_api import DaemonApiError
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from k3_droid.tools import volume_control as volume_control_module
+from k3_droid.daemon_api import DaemonApiError
+from k3_droid.tools.core_tools import ToolDependencies
 
 
 def _deps() -> ToolDependencies:

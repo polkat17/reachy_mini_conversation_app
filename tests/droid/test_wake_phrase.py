@@ -1,6 +1,6 @@
 import pytest
 
-from reachy_mini_conversation_app.droid.wake_phrase import validate_phrase, normalize_phrase
+from k3_droid.droid.wake_phrase import validate_phrase, normalize_phrase
 
 
 @pytest.mark.parametrize(

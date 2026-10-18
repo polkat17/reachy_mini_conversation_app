@@ -1,8 +1,8 @@
 import time
 from pathlib import Path
 
-from reachy_mini_conversation_app.droid import context as context_mod
-from reachy_mini_conversation_app.droid.memory_store import MemoryStore
+from k3_droid.droid import context as context_mod
+from k3_droid.droid.memory_store import MemoryStore
 
 
 def _store(tmp_path: Path) -> MemoryStore:

@@ -14,15 +14,15 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-import reachy_mini_conversation_app.console as console_mod
-from reachy_mini_conversation_app.config import HF_AVAILABLE_VOICES, config
-from reachy_mini_conversation_app.console import LocalStream
-from reachy_mini_conversation_app.streaming import AdditionalOutputs
-from reachy_mini_conversation_app.startup_settings import (
+import k3_droid.console as console_mod
+from k3_droid.config import HF_AVAILABLE_VOICES, config
+from k3_droid.console import LocalStream
+from k3_droid.streaming import AdditionalOutputs
+from k3_droid.startup_settings import (
     StartupSettings,
     load_startup_settings_into_runtime,
 )
-from reachy_mini_conversation_app.personality_routes import (
+from k3_droid.personality_routes import (
     RouteError,
     build_personality_ops,
 )
@@ -414,7 +414,7 @@ def test_backend_startup_failure_is_recorded_without_raising(
     stream._backend_retry_delay = 0
     stream.record_loop = AsyncMock(return_value=None)  # type: ignore[method-assign]
     stream.play_loop = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    monkeypatch.setattr("reachy_mini_conversation_app.console.apply_audio_startup_config", MagicMock())
+    monkeypatch.setattr("k3_droid.console.apply_audio_startup_config", MagicMock())
 
     async def fail_and_stop() -> None:
         stream._stop_event.set()
@@ -436,7 +436,7 @@ def test_backend_startup_failure_is_recorded_without_raising(
 
 def test_media_warmup_overlaps_audio_startup_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Audio configuration should run while the media pipelines warm up."""
-    monkeypatch.setattr("reachy_mini_conversation_app.console.has_hf_realtime_target", lambda: True)
+    monkeypatch.setattr("k3_droid.console.has_hf_realtime_target", lambda: True)
 
     handler = MagicMock()
     handler.shutdown = AsyncMock()
@@ -463,8 +463,8 @@ def test_media_warmup_overlaps_audio_startup_config(monkeypatch: pytest.MonkeyPa
         stream._stop_event.set()
 
     handler.start_up = AsyncMock(side_effect=start_and_stop)
-    monkeypatch.setattr("reachy_mini_conversation_app.console.asyncio.sleep", wait_for_audio_config)
-    monkeypatch.setattr("reachy_mini_conversation_app.console.apply_audio_startup_config", apply_audio_config)
+    monkeypatch.setattr("k3_droid.console.asyncio.sleep", wait_for_audio_config)
+    monkeypatch.setattr("k3_droid.console.apply_audio_startup_config", apply_audio_config)
 
     try:
         stream.launch()
@@ -734,7 +734,7 @@ def test_local_stream_persist_personality_clears_legacy_startup_env_overrides(tm
     applied_profiles: list[str | None] = []
     monkeypatch.delenv("REACHY_MINI_CUSTOM_PROFILE", raising=False)
     monkeypatch.setattr(
-        "reachy_mini_conversation_app.config.set_custom_profile",
+        "k3_droid.config.set_custom_profile",
         lambda profile: applied_profiles.append(profile),
     )
 
@@ -762,7 +762,7 @@ def test_local_stream_launch_waits_for_missing_hf_target_without_starting_media(
 
     init_settings_ui = MagicMock()
     monkeypatch.setattr(stream, "_init_settings_ui_if_needed", init_settings_ui)
-    monkeypatch.setattr("reachy_mini_conversation_app.console.time.sleep", MagicMock(side_effect=KeyboardInterrupt))
+    monkeypatch.setattr("k3_droid.console.time.sleep", MagicMock(side_effect=KeyboardInterrupt))
 
     stream.launch()
 

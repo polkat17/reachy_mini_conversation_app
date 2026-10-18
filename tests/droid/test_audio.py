@@ -1,6 +1,6 @@
 import numpy as np
 
-from reachy_mini_conversation_app.droid.audio import LISTENER_SAMPLE_RATE, LoudnessTrigger, to_mono_16k
+from k3_droid.droid.audio import LISTENER_SAMPLE_RATE, LoudnessTrigger, to_mono_16k
 
 
 def test_to_mono_16k_downmixes_and_resamples() -> None:

@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from reachy_mini_conversation_app.tools.core_tools import Tool, ToolDependencies
+from k3_droid.tools.core_tools import Tool, ToolDependencies
 
 
 logger = logging.getLogger(__name__)

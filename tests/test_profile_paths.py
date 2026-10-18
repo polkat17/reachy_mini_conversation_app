@@ -6,15 +6,15 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-import reachy_mini_conversation_app.config as config_mod
-import reachy_mini_conversation_app.prompts as prompts_mod
-import reachy_mini_conversation_app.personality as headless_mod
-import reachy_mini_conversation_app.profile_store as profile_store_mod
-from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY, config
-from reachy_mini_conversation_app.personality import (
+import k3_droid.config as config_mod
+import k3_droid.prompts as prompts_mod
+import k3_droid.personality as headless_mod
+import k3_droid.profile_store as profile_store_mod
+from k3_droid.config import DEFAULT_PROFILES_DIRECTORY, config
+from k3_droid.personality import (
     list_personalities,
 )
-from reachy_mini_conversation_app.profile_store import read_profile, write_profile, read_profile_from_directory
+from k3_droid.profile_store import read_profile, write_profile, read_profile_from_directory
 
 
 # Path characters budget computation
@@ -28,7 +28,7 @@ from reachy_mini_conversation_app.profile_store import read_profile, write_profi
 #     \snapshots\<commit_hash(40)>\
 #   = 158 characters  =>  101 remaining to 259.
 #   The project root folder is not cloned in the snapshot, so we add it
-#   back to the budget: 101 + len("reachy_mini_conversation_app\") (29) = 130.
+#   back to the budget: 101 + len("k3_droid\") (29) = 130.
 #
 # Wheel files (WINDOWS_WHEEL_PATH_BUDGET = 71):
 #   C:\Users\<username(20)>
@@ -137,7 +137,7 @@ def test_explicit_default_profile_does_not_fall_back_to_itself(
     monkeypatch.setattr(config, "REACHY_MINI_CUSTOM_PROFILE", "default")
     monkeypatch.setattr(profile_store_mod, "DEFAULT_PROFILES_DIRECTORY", tmp_path)
 
-    with caplog.at_level(logging.WARNING, logger="reachy_mini_conversation_app.prompts"):
+    with caplog.at_level(logging.WARNING, logger="k3_droid.prompts"):
         with pytest.raises(RuntimeError, match="Default profile has no usable instructions"):
             prompts_mod.get_session_instructions(instance_path=tmp_path)
 

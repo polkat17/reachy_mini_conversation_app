@@ -12,7 +12,7 @@ Session notes for AI agents working on this fork, as the Reachy Mini SDK's `AGEN
 
 ## Project state
 
-- The `droid` profile and `src/reachy_mini_conversation_app/droid/` are built through all roadmap phases.
+- The `droid` profile and `src/k3_droid/droid/` are built through all roadmap phases.
 - Not yet run on the physical robot; see the checklist in `DROID_ROADMAP.md`.
 
 ## Working environment notes

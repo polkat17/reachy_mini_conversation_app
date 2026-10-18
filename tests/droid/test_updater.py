@@ -5,9 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.droid import updater as updater_mod
-from reachy_mini_conversation_app.droid import update_helper as helper_mod
-from reachy_mini_conversation_app.droid.updater import (
+from k3_droid.droid import updater as updater_mod
+from k3_droid.droid import update_helper as helper_mod
+from k3_droid.droid.updater import (
     UpdateState,
     load_update_state,
     save_update_state,
@@ -118,7 +118,7 @@ def test_launch_helper_is_detached(monkeypatch: pytest.MonkeyPatch) -> None:
     updater_mod.launch_update_helper({"space": "owner/droid", "data_dir": "/tmp/x"})
 
     command = popen.call_args.args[0]
-    assert command[1:3] == ["-m", "reachy_mini_conversation_app.droid.update_helper"]
+    assert command[1:3] == ["-m", "k3_droid.droid.update_helper"]
     assert "--data-dir" in command and popen.call_args.kwargs["start_new_session"] is True
 
 

@@ -1,7 +1,7 @@
 import pytest
 
-from reachy_mini_conversation_app.droid.emotes import EmoteGuard, pick_fallback_emotion
-from reachy_mini_conversation_app.conversation_handler import ConversationEvent
+from k3_droid.droid.emotes import EmoteGuard, pick_fallback_emotion
+from k3_droid.conversation_handler import ConversationEvent
 
 
 @pytest.mark.parametrize(

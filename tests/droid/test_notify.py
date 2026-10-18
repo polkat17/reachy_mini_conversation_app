@@ -4,8 +4,8 @@ from typing import Any
 import httpx
 import pytest
 
-from reachy_mini_conversation_app.droid import notify as notify_mod
-from reachy_mini_conversation_app.droid.settings import DroidSettings
+from k3_droid.droid import notify as notify_mod
+from k3_droid.droid.settings import DroidSettings
 
 
 def _settings(topic: str) -> DroidSettings:

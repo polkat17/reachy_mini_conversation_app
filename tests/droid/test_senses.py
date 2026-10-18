@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from reachy_mini_conversation_app.droid.senses import SoundEvent, CatDetector, SoundWatcher
+from k3_droid.droid.senses import SoundEvent, CatDetector, SoundWatcher
 
 
 WINDOW = np.zeros(15600, dtype=np.float32)

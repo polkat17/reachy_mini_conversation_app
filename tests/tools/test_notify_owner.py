@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.tools import notify_owner as notify_owner_mod
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from k3_droid.tools import notify_owner as notify_owner_mod
+from k3_droid.tools.core_tools import ToolDependencies
 
 
 def _deps() -> ToolDependencies:

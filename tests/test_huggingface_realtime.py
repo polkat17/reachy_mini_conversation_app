@@ -9,13 +9,13 @@ from unittest.mock import AsyncMock, MagicMock
 import numpy as np
 import pytest
 
-import reachy_mini_conversation_app.conversation_handler as conv_mod
-import reachy_mini_conversation_app.huggingface_realtime as hf_mod
-from reachy_mini_conversation_app.config import config, get_default_voice
-from reachy_mini_conversation_app.streaming import AdditionalOutputs
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
-from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
-from reachy_mini_conversation_app.tools.background_tool_manager import ToolState, ToolNotification
+import k3_droid.conversation_handler as conv_mod
+import k3_droid.huggingface_realtime as hf_mod
+from k3_droid.config import config, get_default_voice
+from k3_droid.streaming import AdditionalOutputs
+from k3_droid.tools.core_tools import ToolDependencies
+from k3_droid.huggingface_realtime import HuggingFaceRealtimeHandler
+from k3_droid.tools.background_tool_manager import ToolState, ToolNotification
 
 
 HF_DEFAULT_VOICE = get_default_voice()

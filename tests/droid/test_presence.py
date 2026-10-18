@@ -1,8 +1,8 @@
 import math
 
-from reachy_mini_conversation_app.droid.identity import Identity, InteractionProtocols
-from reachy_mini_conversation_app.droid.presence import STRANGER, Sighting, PresenceEvent, PresenceTracker
-from reachy_mini_conversation_app.droid.reactions import presence_prompt, break_nudge_prompt
+from k3_droid.droid.identity import Identity, InteractionProtocols
+from k3_droid.droid.presence import STRANGER, Sighting, PresenceEvent, PresenceTracker
+from k3_droid.droid.reactions import presence_prompt, break_nudge_prompt
 
 
 OWNER = Sighting("Pasha", is_owner=True)

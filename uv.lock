@@ -1294,6 +1294,62 @@ wheels = [
 ]
 
 [[package]]
+name = "k3-droid"
+version = "1.0.1"
+source = { editable = "." }
+dependencies = [
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "mcp" },
+    { name = "openai" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "reachy-mini" },
+    { name = "reachy-mini-dances-library" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "tokenizers" },
+    { name = "vosk" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "allure-pytest" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "huggingface-hub", specifier = ">=1.17.0" },
+    { name = "mcp", specifier = ">=1.27.1,<2" },
+    { name = "openai", specifier = "==2.28.0" },
+    { name = "python-dotenv" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "reachy-mini", specifier = ">=1.10.0rc5" },
+    { name = "reachy-mini-dances-library" },
+    { name = "scipy", specifier = ">=1.11" },
+    { name = "tokenizers", specifier = ">=0.20" },
+    { name = "vosk", specifier = "==0.3.44" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "allure-pytest", specifier = "==2.16.0" },
+    { name = "mypy", specifier = "==2.2.0" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov", specifier = "==7.1.0" },
+    { name = "ruff", specifier = "==0.15.20" },
+]
+
+[[package]]
 name = "librt"
 version = "0.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2553,62 +2609,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3a/1d/160cb45d92b05642d1d8d792126bbb866788601cacc4f15f2ef55076b8dd/reachy_mini-1.10.0rc5.tar.gz", hash = "sha256:7f33454a8b0f97fce75da1a7ad2dc8942ac776980773484450a91c4f09fbe138", size = 24162044, upload-time = "2026-08-13T07:59:25.07Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/30/2c9e0501d4bb5935fb0ec985095cbd3be3613b7aa5c4893647eb80093407/reachy_mini-1.10.0rc5-py3-none-any.whl", hash = "sha256:9769ca13b6a0fc151729097b75edc4dd66b95435078416824cf7fec60df27b6a", size = 24248732, upload-time = "2026-08-13T07:59:22.314Z" },
-]
-
-[[package]]
-name = "reachy-mini-conversation-app"
-version = "1.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "httpx" },
-    { name = "huggingface-hub" },
-    { name = "mcp" },
-    { name = "openai" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "reachy-mini" },
-    { name = "reachy-mini-dances-library" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "tokenizers" },
-    { name = "vosk" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "allure-pytest" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "huggingface-hub", specifier = ">=1.17.0" },
-    { name = "mcp", specifier = ">=1.27.1,<2" },
-    { name = "openai", specifier = "==2.28.0" },
-    { name = "python-dotenv" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "reachy-mini", specifier = ">=1.10.0rc5" },
-    { name = "reachy-mini-dances-library" },
-    { name = "scipy", specifier = ">=1.11" },
-    { name = "tokenizers", specifier = ">=0.20" },
-    { name = "vosk", specifier = "==0.3.44" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "allure-pytest", specifier = "==2.16.0" },
-    { name = "mypy", specifier = "==2.2.0" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov", specifier = "==7.1.0" },
-    { name = "ruff", specifier = "==0.15.20" },
 ]
 
 [[package]]

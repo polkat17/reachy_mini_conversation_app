@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from reachy_mini_conversation_app.droid import context as context_mod
+from k3_droid.droid import context as context_mod
 
 
 class BagOfWordsEmbedder:

@@ -2,10 +2,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.tools import forget as forget_module
-from reachy_mini_conversation_app.memory import MemoryFact, ForgetMemoryResult
-from reachy_mini_conversation_app.tools.forget import Forget
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from k3_droid.tools import forget as forget_module
+from k3_droid.memory import MemoryFact, ForgetMemoryResult
+from k3_droid.tools.forget import Forget
+from k3_droid.tools.core_tools import ToolDependencies
 
 
 def _deps() -> ToolDependencies:

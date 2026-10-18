@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
-from reachy_mini_conversation_app.tools.head_tracking import HeadTracking
+from k3_droid.tools.core_tools import ToolDependencies
+from k3_droid.tools.head_tracking import HeadTracking
 
 
 @pytest.mark.asyncio

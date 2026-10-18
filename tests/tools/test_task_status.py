@@ -2,10 +2,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
-from reachy_mini_conversation_app.tools.task_status import TaskStatus
-from reachy_mini_conversation_app.tools.tool_constants import ToolState
-from reachy_mini_conversation_app.tools.background_tool_manager import ToolProgress, BackgroundTool
+from k3_droid.tools.core_tools import ToolDependencies
+from k3_droid.tools.task_status import TaskStatus
+from k3_droid.tools.tool_constants import ToolState
+from k3_droid.tools.background_tool_manager import ToolProgress, BackgroundTool
 
 
 def _deps() -> ToolDependencies:

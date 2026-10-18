@@ -1,7 +1,7 @@
 # Droid Companion Roadmap
 
 Companion to `DROID_BRIEF.md`. It records the decisions agreed with Pasha and the order the droid is built in.
-Everything droid-specific lives in `src/reachy_mini_conversation_app/droid/` and `profiles/droid/`, so upstream
+Everything droid-specific lives in `src/k3_droid/droid/` and `profiles/droid/`, so upstream
 changes to the conversation app still merge cleanly. Upstream files get small, clearly marked hooks only.
 
 ## Decisions
@@ -77,8 +77,8 @@ A Claude Code routine on your plan implements upgrade requests. Suggested schedu
 > In `polkat17/reachy_mini_conversation_app`, list open issues labelled `droid-upgrade` that have no linked
 > pull request. Take the oldest one. Read `AGENTS.md`, `DROID_ROADMAP.md` and the issue, implement it on a new
 > branch `droid-upgrade/<issue-number>-<short-name>` following the repository's conventions (a new tool in
-> `src/reachy_mini_conversation_app/tools/` enabled in `profiles/droid/profile.md`, or a change inside
-> `src/reachy_mini_conversation_app/droid/`), add tests, run
+> `src/k3_droid/tools/` enabled in `profiles/droid/profile.md`, or a change inside
+> `src/k3_droid/droid/`), add tests, run
 > `ruff check . && ruff format --check . && mypy && pytest tests/`, and open a pull request that says
 > "Closes #<number>" and lists any setup steps. Never merge. If the request is unsafe (unlocking doors, spending
 > money, sharing the owner's data) or unclear, comment on the issue instead of implementing it. Stop after one

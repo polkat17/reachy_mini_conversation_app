@@ -1,6 +1,6 @@
 import numpy as np
 
-from reachy_mini_conversation_app.droid.voice_fx import DroidVoiceFilter
+from k3_droid.droid.voice_fx import DroidVoiceFilter
 
 
 def _speechlike(seconds: float = 1.0, rate: int = 16000) -> np.ndarray:

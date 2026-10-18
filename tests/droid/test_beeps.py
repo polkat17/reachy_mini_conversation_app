@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy.io import wavfile
 
-from reachy_mini_conversation_app.droid.beeps import BEEP_PATTERNS, BEEP_SAMPLE_RATE, beep_file, render_beep
+from k3_droid.droid.beeps import BEEP_PATTERNS, BEEP_SAMPLE_RATE, beep_file, render_beep
 
 
 @pytest.mark.parametrize("pattern", sorted(BEEP_PATTERNS))

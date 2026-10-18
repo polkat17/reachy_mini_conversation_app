@@ -10,14 +10,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from reachy_mini_conversation_app.droid import runtime as runtime_mod
-from reachy_mini_conversation_app.droid.web import register_droid_routes
-from reachy_mini_conversation_app.droid.senses import SoundEvent
-from reachy_mini_conversation_app.droid.journal import SessionSummary
-from reachy_mini_conversation_app.droid.runtime import DroidRuntime
-from reachy_mini_conversation_app.droid.updater import UpdateState, load_update_state, save_update_state
-from reachy_mini_conversation_app.droid.presence import PresenceEvent
-from reachy_mini_conversation_app.conversation_handler import ConversationEvent
+from k3_droid.droid import runtime as runtime_mod
+from k3_droid.droid.web import register_droid_routes
+from k3_droid.droid.senses import SoundEvent
+from k3_droid.droid.journal import SessionSummary
+from k3_droid.droid.runtime import DroidRuntime
+from k3_droid.droid.updater import UpdateState, load_update_state, save_update_state
+from k3_droid.droid.presence import PresenceEvent
+from k3_droid.conversation_handler import ConversationEvent
 
 
 @pytest.mark.asyncio

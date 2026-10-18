@@ -1,4 +1,4 @@
-from reachy_mini_conversation_app.droid.antenna import AntennaFlickDetector
+from k3_droid.droid.antenna import AntennaFlickDetector
 
 
 def test_flick_fires_once_until_released() -> None:

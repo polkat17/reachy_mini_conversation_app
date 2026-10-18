@@ -10,16 +10,16 @@ from pathlib import Path
 
 import pytest
 
-import reachy_mini_conversation_app.personality as personality_mod
-from reachy_mini_conversation_app.config import config
-from reachy_mini_conversation_app.avatars import (
+import k3_droid.personality as personality_mod
+from k3_droid.config import config
+from k3_droid.avatars import (
     DEFAULT_AVATAR_FILE,
     avatar_id_for,
     read_avatar_svg,
 )
-from reachy_mini_conversation_app.personality import save_user_personality
-from reachy_mini_conversation_app.profile_store import DEFAULT_PROFILE_NAME
-from reachy_mini_conversation_app.personality_routes import (
+from k3_droid.personality import save_user_personality
+from k3_droid.profile_store import DEFAULT_PROFILE_NAME
+from k3_droid.personality_routes import (
     RouteError,
     PersonalityOps,
     build_personality_ops,
@@ -99,7 +99,7 @@ def test_avatar_method_falls_back_for_unknown() -> None:
 def test_avatar_unavailable_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """If even the default avatar cannot be read, avatar() surfaces a RouteError."""
     monkeypatch.setattr(
-        "reachy_mini_conversation_app.personality_routes.read_avatar_svg",
+        "k3_droid.personality_routes.read_avatar_svg",
         lambda name: None,
     )
     with pytest.raises(RouteError) as ei:

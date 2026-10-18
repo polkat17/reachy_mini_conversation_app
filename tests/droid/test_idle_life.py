@@ -3,8 +3,8 @@ from datetime import datetime
 
 import pytest
 
-from reachy_mini_conversation_app.droid.identity import InteractionProtocols
-from reachy_mini_conversation_app.droid.idle_life import IdleLife, in_quiet_hours, parse_quiet_hours
+from k3_droid.droid.identity import InteractionProtocols
+from k3_droid.droid.idle_life import IdleLife, in_quiet_hours, parse_quiet_hours
 
 
 @pytest.mark.parametrize(
