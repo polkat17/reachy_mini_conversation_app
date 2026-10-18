@@ -1,5 +1,6 @@
 import time
 import asyncio
+import threading
 import dataclasses
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
@@ -343,3 +344,47 @@ async def test_upgrade_is_announced_once_on_wake(tmp_path, monkeypatch: pytest.M
 
     runtime.say_event.assert_awaited_once()
     assert "train announcements" in runtime.say_event.await_args.args[0]
+
+
+def test_antenna_flick_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """While dormant, flicking an antenna requests a wake-up; the first readings after sleeping are ignored."""
+    monkeypatch.setattr(runtime_mod, "_ANTENNA_POLL_S", 0.005)
+    monkeypatch.setattr(runtime_mod, "_ANTENNA_SETTLE_S", 0.02)
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.stream.is_dormant = True  # type: ignore[union-attr]
+    readings = iter([(-0.17, 0.17)] * 20 + [(-0.17, 0.6)] * 200)
+    runtime.deps.reachy_mini.get_current_joint_positions.side_effect = lambda: ([0.0] * 7, list(next(readings)))
+    woke = threading.Event()
+    runtime.request_wake = MagicMock(side_effect=lambda reason: woke.set())  # type: ignore[method-assign]
+
+    watcher = threading.Thread(target=runtime._watch_antennas, daemon=True)
+    watcher.start()
+    try:
+        assert woke.wait(2.0)
+    finally:
+        runtime.stop()
+        watcher.join(1.0)
+    runtime.request_wake.assert_called_once_with("antenna")
+
+
+def test_presence_interval_backs_off(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The camera loop looks less often while dormant or while someone is already in view."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.settings = dataclasses.replace(runtime.settings, presence_interval_s=2.0)
+    runtime.presence = MagicMock()
+    runtime.presence.tracker.present.return_value = []
+
+    assert runtime._presence_interval_s() == 2.0
+    runtime.presence.tracker.present.return_value = ["Pasha"]
+    assert runtime._presence_interval_s() == 3.0
+
+
+@pytest.mark.asyncio
+async def test_sound_senses_can_be_switched_off(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """DROID_LISTEN_FOR_SOUNDS=0 skips loading the sound classifier entirely."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.settings = dataclasses.replace(runtime.settings, listen_for_sounds=False)
+
+    runtime._listen_for_sounds(np.zeros(1600, dtype=np.float32))
+
+    assert runtime._sound_loading is False

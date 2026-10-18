@@ -8,11 +8,11 @@ changes to the conversation app still merge cleanly. Upstream files get small, c
 
 | Topic | Decision |
 |---|---|
-| Runs on | The robot (Pi 5). Models stay light and run on ONNX Runtime, which the SDK already ships. |
+| Runs on | The robot's onboard CM4 (Wireless version; the brief said Pi 5, the SDK documents a CM4). Models stay light, run on ONNX Runtime, and the heavier senses can be slowed or switched off. |
 | Voice AI | Hugging Face realtime backend (the only backend in this fork). |
 | Owner | Pasha, preset. The droid still asks for its own name during activation. |
 | Strangers | Talks freely, but never shares Pasha's memories. |
-| Wake-up | Seeing Pasha's face, hearing its wake phrase (chosen during activation), or the web UI button. |
+| Wake-up | Seeing Pasha's face, hearing its wake phrase (chosen during activation), flicking an antenna, or the web UI button. |
 | Autostart | The daemon's built-in startup-app setting (`PUT /api/apps/startup-app`). No SSH needed. |
 | Self-upgrades | The droid files a GitHub issue; a scheduled Claude Code session opens a PR; Pasha merges; the robot installs `main` while dormant and rolls back if the new version fails its health check. |
 | Settings | `.env` (documented in `.env.example`). |
@@ -97,6 +97,13 @@ These parts depend on real hardware or services and could only be tested with mo
 - [ ] Voice filter taste (parameters in `droid/voice_fx.py`).
 - [ ] The update helper surviving the app being stopped, and pip installing into the apps environment.
 - [ ] Session summaries with your `HF_TOKEN` and the chosen `DROID_SUMMARY_MODEL`.
+- [ ] CPU and memory on the CM4 with every sense on (`top` over SSH or the dashboard). If it struggles, raise
+      `DROID_PRESENCE_INTERVAL_S`, or set `DROID_WATCH_CATS=0` / `DROID_LISTEN_FOR_SOUNDS=0`.
+- [ ] Antenna flick wakes the droid from dormant mode (`AntennaFlickDetector` thresholds in `droid/antenna.py`).
+
+Already verified against a simulated robot (mock-sim daemon, real Hugging Face voice session, media off):
+the activation protocol starts on its own and runs the boot self-test, the droid goes dormant from the control
+page, an antenna movement wakes it, and the new session resumes activation at the right stage.
 
 ## Known limits
 
