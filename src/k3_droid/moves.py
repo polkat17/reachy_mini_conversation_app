@@ -16,6 +16,11 @@ Threading model
 
 Units and frames
 - Antennas and `body_yaw` are in radians.
+- Moves are expressed in the body frame. The manager keeps a body heading (set by
+  `turn_body`) and rotates every commanded head pose and body yaw by it, so the
+  whole robot turns on its base and moves keep playing relative to where it faces.
+  Code that seeds a move from the robot's measured pose converts it with
+  `to_body_frame` first.
 
 Safety
 - Listening freezes antennas, then blends them back on unfreeze.
@@ -46,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration constants
 CONTROL_LOOP_FREQUENCY_HZ = 60.0  # Hz - Target frequency for the movement control loop
+MAX_BODY_HEADING_RAD = float(np.deg2rad(160.0))  # the SDK's mechanical body-yaw limit
 
 # Type definitions
 FullBodyPose = Tuple[NDArray[np.float32], Tuple[float, float], float]  # (head_pose_4x4, antennas, body_yaw)
@@ -126,6 +132,14 @@ def clone_full_body_pose(pose: FullBodyPose) -> FullBodyPose:
     """Create a deep copy of a full body pose tuple."""
     head, antennas, body_yaw = pose
     return (head.copy(), (float(antennas[0]), float(antennas[1])), float(body_yaw))
+
+
+def _rotate_about_z(pose: NDArray[Any], angle: float) -> NDArray[Any]:
+    """Rotate a world-frame 4x4 pose about the vertical axis through the robot's base."""
+    c, s = np.cos(angle), np.sin(angle)
+    rotation = np.array([[c, -s, 0.0, 0.0], [s, c, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
+    rotated: NDArray[Any] = rotation @ pose
+    return rotated
 
 
 @dataclass
@@ -237,6 +251,14 @@ class MovementManager:
         self._freq_stats = LoopFrequencyStats()
         self._freq_snapshot = LoopFrequencyStats()
 
+        # Body heading: the worker eases from start to target; other threads read the published values.
+        self._heading_start = 0.0
+        self._heading_target = 0.0
+        self._heading_turn_start = self._now()
+        self._heading_turn_duration = 0.0
+        self._shared_heading = 0.0
+        self._shared_heading_target = 0.0
+
     def queue_move(self, move: Move) -> None:
         """Queue a primary move to run after the currently executing one.
 
@@ -298,6 +320,39 @@ class MovementManager:
         daemon tracking. Thread-safe: posted to the worker command queue.
         """
         self._command_queue.put(("set_speaking", speaking))
+
+    def turn_body(self, heading: float, duration: float) -> float:
+        """Turn the base to an absolute heading in radians (positive is left); returns the clamped heading.
+
+        Thread-safe: posted to the worker command queue.
+        """
+        clamped = float(np.clip(heading, -MAX_BODY_HEADING_RAD, MAX_BODY_HEADING_RAD))
+        with self._shared_state_lock:
+            self._shared_heading_target = clamped
+        self._command_queue.put(("turn_body", (clamped, max(0.0, float(duration)))))
+        return clamped
+
+    def body_heading(self) -> float:
+        """Return the heading the base faces right now, in radians."""
+        with self._shared_state_lock:
+            return self._shared_heading
+
+    def body_heading_target(self) -> float:
+        """Return the heading the base is facing or turning towards, in radians."""
+        with self._shared_state_lock:
+            return self._shared_heading_target
+
+    def to_body_frame(self, pose: NDArray[Any]) -> NDArray[Any]:
+        """Convert a measured world-frame head pose into the body frame that moves are expressed in."""
+        return _rotate_about_z(pose, -self.body_heading())
+
+    def _current_heading(self, current_time: float) -> float:
+        """Ease the heading from its start to its target over the turn duration."""
+        if self._heading_turn_duration <= 0.0:
+            return self._heading_target
+        t = min(1.0, max(0.0, (current_time - self._heading_turn_start) / self._heading_turn_duration))
+        eased = t * t * (3.0 - 2.0 * t)
+        return self._heading_start + (self._heading_target - self._heading_start) * eased
 
     def _poll_signals(self, current_time: float) -> None:
         """Apply queued commands."""
@@ -392,13 +447,20 @@ class MovementManager:
             try:
                 if speaking and self.current_robot.get_tracked_face(wait=False).detected:
                     # Pause only once a face is locked, else speech blocks acquisition.
-                    self._track_anchor = self.current_robot.get_current_head_pose()
+                    self._track_anchor = self.to_body_frame(self.current_robot.get_current_head_pose())
                     self.current_robot.start_head_tracking(weight=0.0)
                 elif not speaking:
                     self._track_anchor = None
                     self.current_robot.start_head_tracking(weight=1.0)
             except Exception as e:
                 logger.warning("Head-tracking speaking handoff failed: %s", e)
+        elif command == "turn_body":
+            target, duration = payload
+            self._heading_start = self._current_heading(current_time)
+            self._heading_target = float(target)
+            self._heading_turn_start = current_time
+            self._heading_turn_duration = float(duration)
+            self.state.update_activity()
         else:
             logger.warning("Unknown command received by MovementManager: %s", command)
 
@@ -407,6 +469,7 @@ class MovementManager:
         with self._shared_state_lock:
             self._shared_last_activity_time = self.state.last_activity_time
             self._shared_is_listening = self._is_listening
+            self._shared_heading = self._current_heading(self._now())
 
     def _manage_move_queue(self, current_time: float) -> None:
         """Manage the primary move queue (sequential execution)."""
@@ -438,7 +501,7 @@ class MovementManager:
                     # These 2 functions return the latest available sensor data from the robot, but don't perform I/O synchronously.
                     # Therefore, we accept calling them inside the control loop.
                     _, current_antennas = self.current_robot.get_current_joint_positions()
-                    current_head_pose = self.current_robot.get_current_head_pose()
+                    current_head_pose = self.to_body_frame(self.current_robot.get_current_head_pose())
 
                     self._breathing_active = True
                     self.state.update_activity()
@@ -627,6 +690,11 @@ class MovementManager:
         if self._thread is not None and self._thread.is_alive():
             logger.warning("Move worker already running; start() ignored")
             return
+        # Sleep and the neutral reset both return the base to 0, so every start faces home.
+        self._heading_start = self._heading_target = 0.0
+        self._heading_turn_duration = 0.0
+        with self._shared_state_lock:
+            self._shared_heading = self._shared_heading_target = 0.0
         self._stop_event.clear()
         self._thread = threading.Thread(target=self.working_loop, daemon=True)
         self._thread.start()
@@ -745,18 +813,23 @@ class MovementManager:
             # 3) Build the primary full-body pose for this tick
             head, antennas, body_yaw = self._get_primary_pose(loop_start)
 
-            # 4) Apply listening antenna freeze or blend-back
+            # 4) Turn the body-frame pose to the current body heading
+            heading = self._current_heading(loop_start)
+            head = _rotate_about_z(head, heading)
+            body_yaw = body_yaw + heading
+
+            # 5) Apply listening antenna freeze or blend-back
             antennas_cmd = self._calculate_blended_antennas(antennas)
 
-            # 5) Single set_target call - the only control point
+            # 6) Single set_target call - the only control point
             self._issue_control_command(head, antennas_cmd, body_yaw)
 
-            # 6) Adaptive sleep to align to next tick, then publish shared state
+            # 7) Adaptive sleep to align to next tick, then publish shared state
             sleep_time, freq_stats = self._schedule_next_tick(loop_start, freq_stats)
             self._publish_shared_state()
             self._record_frequency_snapshot(freq_stats)
 
-            # 7) Periodic telemetry on loop frequency
+            # 8) Periodic telemetry on loop frequency
             self._maybe_log_frequency(loop_count, print_interval_loops, freq_stats)
 
             if sleep_time > 0:

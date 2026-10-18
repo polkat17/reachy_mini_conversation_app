@@ -30,9 +30,9 @@ class SweepLook(Tool):
         logger.info("Tool call: sweep_look")
         deps.movement_manager.clear_move_queue()
 
-        current_head_pose = deps.reachy_mini.get_current_head_pose()
+        current_head_pose = deps.movement_manager.to_body_frame(deps.reachy_mini.get_current_head_pose())
         head_joints, antenna_joints = deps.reachy_mini.get_current_joint_positions()
-        current_body_yaw = head_joints[0]
+        current_body_yaw = head_joints[0] - deps.movement_manager.body_heading()
         current_antennas = (antenna_joints[0], antenna_joints[1])
         max_angle = 0.9 * np.pi
         transition_duration = 3.0

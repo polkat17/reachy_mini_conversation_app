@@ -52,9 +52,10 @@ class MoveHead(Tool):
         try:
             movement_manager = deps.movement_manager
 
-            # Get current state for interpolation
-            current_head_pose = deps.reachy_mini.get_current_head_pose()
-            _, current_antennas = deps.reachy_mini.get_current_joint_positions()
+            # Get current state for interpolation, in the body frame moves are expressed in
+            current_head_pose = movement_manager.to_body_frame(deps.reachy_mini.get_current_head_pose())
+            head_joints, current_antennas = deps.reachy_mini.get_current_joint_positions()
+            current_body_yaw = head_joints[0] - movement_manager.body_heading()  # body_yaw is first in head joints
 
             # Create goto move
             goto_move = GotoQueueMove(
@@ -64,9 +65,9 @@ class MoveHead(Tool):
                 start_antennas=(
                     current_antennas[0],
                     current_antennas[1],
-                ),  # Skip body_yaw
-                target_body_yaw=0,  # Reset body yaw
-                start_body_yaw=current_antennas[0],  # body_yaw is first in joint positions
+                ),
+                target_body_yaw=0,  # Body faces its current heading
+                start_body_yaw=current_body_yaw,
                 duration=deps.motion_duration_s,
             )
 

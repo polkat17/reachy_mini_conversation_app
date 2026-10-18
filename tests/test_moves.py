@@ -187,3 +187,48 @@ def test_handle_command_queue_and_clear() -> None:
     manager._handle_command("clear_queue", None, now)
     assert len(manager.move_queue) == 0
     assert manager.state.current_move is None
+
+
+def test_turn_body_rotates_the_commanded_pose_on_the_base() -> None:
+    """After a turn, every tick commands the body yaw and the head pose rotated by the heading."""
+    robot = MagicMock()
+    robot.get_current_head_pose.return_value = np.eye(4)
+    robot.get_current_joint_positions.return_value = ([0.0] * 7, [0.0, 0.0])
+    manager = MovementManager(robot)
+    manager.start()
+    try:
+        heading = manager.turn_body(np.deg2rad(90), duration=0.0)
+
+        def latest_body_yaw() -> float:
+            return float(robot.set_target.call_args.kwargs["body_yaw"]) if robot.set_target.call_args else 0.0
+
+        assert _wait_for(lambda: abs(latest_body_yaw() - heading) < 1e-6)
+        head = robot.set_target.call_args.kwargs["head"]
+        expected = create_head_pose(0, 0, 0, 0, 0, 90, degrees=True)
+        assert np.allclose(head[:3, :3], expected[:3, :3], atol=1e-6)
+        assert _wait_for(lambda: manager.body_heading() == pytest.approx(heading))
+    finally:
+        manager.stop(reset_to_neutral=False)
+
+
+def test_turn_body_clamps_to_the_base_limit_and_eases() -> None:
+    """Headings beyond the SDK limit are clamped, and turns ease from the current heading."""
+    manager = MovementManager(MagicMock())
+    assert manager.turn_body(np.deg2rad(200), duration=2.0) == pytest.approx(np.deg2rad(160))
+    assert manager.body_heading_target() == pytest.approx(np.deg2rad(160))
+
+    now = manager._now()
+    manager._handle_command("turn_body", (1.0, 2.0), now)
+    assert manager._current_heading(now) == pytest.approx(0.0)
+    assert manager._current_heading(now + 1.0) == pytest.approx(0.5)
+    assert manager._current_heading(now + 5.0) == pytest.approx(1.0)
+
+
+def test_to_body_frame_undoes_the_heading() -> None:
+    """A measured world pose converted to the body frame and turned back is unchanged."""
+    manager = MovementManager(MagicMock())
+    manager._shared_heading = 0.7
+    world = create_head_pose(0.01, 0.02, 0.0, 5, 10, 60, degrees=True)
+    body = manager.to_body_frame(world)
+    expected = create_head_pose(0, 0, 0, 0, 0, np.rad2deg(0.7), degrees=True) @ body
+    assert np.allclose(expected, world, atol=1e-9)

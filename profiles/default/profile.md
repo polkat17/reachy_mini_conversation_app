@@ -10,6 +10,7 @@ default_tools = [
   "move_head",
   "go_to_sleep",
   "sweep_look",
+  "turn_body",
   "remember",
   "forget",
   "head_tracking",

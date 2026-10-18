@@ -729,12 +729,15 @@ class DroidRuntime:
         """Glide the head towards a camera pixel through the movement queue."""
         robot = self.deps.reachy_mini
         try:
-            target = robot.look_at_image(u, v, duration=duration_s, perform_movement=False)
+            movement_manager = self.deps.movement_manager
+            target = movement_manager.to_body_frame(
+                robot.look_at_image(u, v, duration=duration_s, perform_movement=False)
+            )
             _, antennas = robot.get_current_joint_positions()
-            self.deps.movement_manager.queue_move(
+            movement_manager.queue_move(
                 GotoQueueMove(
                     target_head_pose=target,
-                    start_head_pose=robot.get_current_head_pose(),
+                    start_head_pose=movement_manager.to_body_frame(robot.get_current_head_pose()),
                     target_antennas=(antennas[0], antennas[1]),
                     start_antennas=(antennas[0], antennas[1]),
                     duration=duration_s,
