@@ -53,6 +53,9 @@ class TurnBody(Tool):
 
 def turn_base(movement_manager: Any, angle_degrees: float | None) -> Dict[str, Any]:
     """Turn the base by ``angle_degrees`` (positive is left), or back home when None; shared with the control page."""
+    if not movement_manager.is_running():
+        # A turn queued while the loop is stopped would fire on wake and desync the heading bookkeeping.
+        return {"error": "The droid is asleep, so its motors are not being driven. Wake it up first."}
     # Tracking keeps the head on the person, and the robot limits how far the base may twist away from the head,
     # so it would pull the body straight back.
     movement_manager.set_head_tracking(False)

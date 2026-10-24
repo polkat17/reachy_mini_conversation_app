@@ -55,3 +55,13 @@ async def test_turn_body_rejects_a_non_numeric_angle() -> None:
     result = await TurnBody()(deps, angle_degrees="left")
     assert result == {"error": "angle_degrees must be a number"}
     deps.movement_manager.turn_body.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_turn_body_refuses_while_the_droid_is_asleep() -> None:
+    """With the control loop stopped, nothing is queued to fire on wake."""
+    deps = _deps()
+    deps.movement_manager.is_running.return_value = False
+    result = await TurnBody()(deps, angle_degrees=45)
+    assert "asleep" in result["error"]
+    deps.movement_manager.turn_body.assert_not_called()

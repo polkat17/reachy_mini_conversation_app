@@ -37,6 +37,7 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "update": _software_line(runtime),
         "upgrade_requests": upgrades_enabled(runtime.settings),
         "day_review": runtime.day_review_note,
+        "movement": "running" if runtime.deps.movement_manager.is_running() else "stopped (asleep)",
         "base": _base_line(runtime),
     }
 
@@ -156,7 +157,7 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
         angles = {"left": 45.0, "right": -45.0, "home": None}
         if direction not in angles:
             raise HTTPException(status_code=404, detail="direction must be left, right or home")
-        return turn_base(runtime.deps.movement_manager, angles[direction])
+        return _require_ok(turn_base(runtime.deps.movement_manager, angles[direction]))
 
     @app.post("/droid/api/update-now")
     def _update_now() -> dict[str, Any]:
