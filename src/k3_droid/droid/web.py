@@ -126,6 +126,14 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
             raise HTTPException(status_code=404, detail="No such session")
         return {"status": "Session deleted."}
 
+    @app.post("/droid/api/finish-activation")
+    def _finish_activation() -> dict[str, Any]:
+        if runtime.identity.activated:
+            return {"status": "Already activated."}
+        if not runtime.submit(runtime.complete_activation()):
+            raise HTTPException(status_code=409, detail="the droid runtime is not running yet")
+        return {"status": "Activated. Stages not done yet keep their defaults; say 'redo' to change one."}
+
     @app.post("/droid/api/update-now")
     def _update_now() -> dict[str, Any]:
         return {"status": runtime.check_for_update(force=True)}

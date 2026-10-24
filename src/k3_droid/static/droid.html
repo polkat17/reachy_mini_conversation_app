@@ -57,9 +57,17 @@
   </section>
 
   <section>
+    <h2>Activation</h2>
+    <p>Finish activation now and keep the defaults for the stages not done yet (Russian, dry humour, brief
+      replies, no memory until you agree). You can change any of them later by asking the droid to redo a stage.</p>
+    <button class="secondary" data-post="/droid/api/finish-activation"
+      data-confirm="Finish activation now with default answers for the remaining stages?">Finish activation</button>
+  </section>
+
+  <section>
     <h2>Software</h2>
-    <p>Merged upgrades install automatically at night while the droid is dormant. The new version must report
-      healthy within five minutes, or the previous one is reinstalled.</p>
+    <p>Installs the latest version from the Hugging Face Space. The new version must report healthy within five
+      minutes, or the previous one is reinstalled.</p>
     <button class="secondary" data-post="/droid/api/update-now"
       data-confirm="Check for an upgrade now? If one exists the droid restarts to install it.">Check for upgrade now</button>
   </section>

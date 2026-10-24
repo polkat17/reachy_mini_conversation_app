@@ -483,7 +483,7 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 | `DROID_ANTENNA_WAKE` | Flicking an antenna wakes a dormant droid. Default on. |
 | `DROID_HEAD_SCRATCH_WAKE` | Scratching the head (about a second of rubbing, felt through the head's IMU on the Wireless version) wakes a dormant droid. Default on. |
 | `DROID_GITHUB_REPO` / `DROID_GITHUB_TOKEN` | Where upgrade requests are filed; the token needs only issue access. |
-| `DROID_UPDATE_SPACE` / `DROID_AUTO_UPDATE` | The Hugging Face Space mirroring `main`, and whether to install newer revisions at night. |
+| `DROID_UPDATE_SPACE` / `DROID_AUTO_UPDATE` | The Hugging Face Space to update from (default `Polkat/k3-droid`), and whether to install newer revisions at night (default off; the control page's "Check for upgrade now" installs on demand). |
 | `DROID_HOME_ASSISTANT_URL` / `DROID_HOME_ASSISTANT_TOKEN` | Home Assistant address and long-lived access token. |
 | `DROID_SUMMARY_MODEL` | Hugging Face model for session summaries and the diary. Default `Qwen/Qwen2.5-7B-Instruct`; uses `HF_TOKEN`. |
 | `DROID_NTFY_TOPIC` / `DROID_NTFY_SERVER` | Phone notifications through [ntfy](https://ntfy.sh): subscribe to the same private topic in the ntfy app. |

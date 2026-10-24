@@ -415,3 +415,29 @@ async def test_sound_senses_can_be_switched_off(tmp_path, monkeypatch: pytest.Mo
     runtime._listen_for_sounds(np.zeros(1600, dtype=np.float32))
 
     assert runtime._sound_loading is False
+
+
+def test_finish_activation_button_activates_with_defaults(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The control page can finish activation early; stages not done keep their defaults."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.submit = MagicMock(side_effect=lambda coro: (coro.close(), True)[1])  # type: ignore[method-assign]
+    monkeypatch.setattr(runtime_mod, "fetch_day_review", MagicMock(return_value=(None, "no review for today yet")))
+    app = FastAPI()
+    register_droid_routes(app, runtime)
+    client = TestClient(app)
+
+    response = client.post("/droid/api/finish-activation")
+
+    assert response.status_code == 200 and "Activated" in response.json()["status"]
+    runtime.submit.assert_called_once()
+    runtime.identity.activated = True
+    assert client.post("/droid/api/finish-activation").json() == {"status": "Already activated."}
+
+
+def test_updates_default_to_the_k3_space_on_demand_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Updates come from Polkat/k3-droid, and only when asked for until auto-update is switched on."""
+    monkeypatch.delenv("DROID_UPDATE_SPACE", raising=False)
+    monkeypatch.delenv("DROID_AUTO_UPDATE", raising=False)
+    settings = runtime_mod.DroidSettings.from_env()
+    assert settings.update_space == "Polkat/k3-droid"
+    assert settings.auto_update is False

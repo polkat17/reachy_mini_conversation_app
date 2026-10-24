@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 # Where Pasha's weekday-morning Claude routine saves the day review; DROID_DAY_REVIEW_DATASET points elsewhere.
 DEFAULT_DAY_REVIEW_DATASET = "Polkat/k3-droid-briefing"
+# The Hugging Face Space this fork is published to; the droid installs newer revisions from it.
+DEFAULT_UPDATE_SPACE = "Polkat/k3-droid"
 
 
 def _env_float(name: str, default: float) -> float:
@@ -61,8 +63,9 @@ class DroidSettings:
             github_token=(os.getenv("DROID_GITHUB_TOKEN") or "").strip(),
             home_assistant_url=(os.getenv("DROID_HOME_ASSISTANT_URL") or "").strip().rstrip("/"),
             home_assistant_token=(os.getenv("DROID_HOME_ASSISTANT_TOKEN") or "").strip(),
-            update_space=(os.getenv("DROID_UPDATE_SPACE") or "").strip(),
-            auto_update=_env_flag("DROID_AUTO_UPDATE", default=True),
+            update_space=(os.getenv("DROID_UPDATE_SPACE") or DEFAULT_UPDATE_SPACE).strip(),
+            # Off until the self-install has been seen working on the robot; "Check for upgrade now" still works.
+            auto_update=_env_flag("DROID_AUTO_UPDATE", default=False),
             day_review_dataset=(os.getenv("DROID_DAY_REVIEW_DATASET") or DEFAULT_DAY_REVIEW_DATASET).strip(),
             # Defaults sized for the Wireless robot's CM4: the camera loop sleeps 2 s between looks.
             presence_interval_s=max(0.5, _env_float("DROID_PRESENCE_INTERVAL_S", 2.0)),
