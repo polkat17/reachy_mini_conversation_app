@@ -1,5 +1,7 @@
 """Tests for persisted instance-local startup settings."""
 
+import pytest
+
 from k3_droid.startup_settings import (
     StartupSettings,
     read_startup_settings,
@@ -102,3 +104,20 @@ def test_saved_default_stays_default(monkeypatch, tmp_path) -> None:
     load_startup_settings_into_runtime(tmp_path)
 
     assert applied_profiles == ["default"]
+
+
+@pytest.mark.k3_locked
+def test_k3_droid_ships_locked_to_the_droid(monkeypatch, tmp_path) -> None:
+    """K3 Droid boots as the droid, and neither a saved personality nor the UI can switch it."""
+    from k3_droid import config as config_mod
+
+    monkeypatch.setattr(config_mod.config, "REACHY_MINI_CUSTOM_PROFILE", "droid")
+    write_startup_settings(tmp_path, profile="default", voice=None)
+    monkeypatch.delenv("REACHY_MINI_CUSTOM_PROFILE", raising=False)
+
+    load_startup_settings_into_runtime(tmp_path)
+    config_mod.set_custom_profile("default")
+
+    assert config_mod.LOCKED_PROFILE == "droid"
+    assert config_mod.Config.REACHY_MINI_CUSTOM_PROFILE == "droid"
+    assert config_mod.config.REACHY_MINI_CUSTOM_PROFILE == "droid"

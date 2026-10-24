@@ -12,7 +12,8 @@ from dotenv import find_dotenv, load_dotenv
 
 # Locked profile: set to a profile name (e.g., "astronomer") to lock the app
 # to that profile and disable all profile switching. Leave as None for normal behavior.
-LOCKED_PROFILE: str | None = None
+# K3 Droid is always the droid: a stale saved personality must not start the plain assistant.
+LOCKED_PROFILE: str | None = "droid"
 PROJECT_ROOT = Path(__file__).parents[2].resolve()
 
 
