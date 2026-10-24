@@ -53,14 +53,15 @@ def test_wake_up_if_sleeping_enables_motors_before_wake_up() -> None:
     ]
 
 
-def test_wake_up_if_sleeping_wakes_limp_motors_outside_the_sleep_pose() -> None:
-    """Motors left off by the daemon are switched on even when the head is not in the sleep pose."""
+def test_wake_up_if_sleeping_powers_limp_motors_quietly_outside_the_sleep_pose() -> None:
+    """Motors left off outside the sleep pose are switched on without the wake-up sound."""
     robot = _robot("disabled")
     robot.get_current_head_pose.return_value = np.eye(4)
 
     assert app_lifecycle.wake_up_if_sleeping(robot, MagicMock())
     robot.enable_motors.assert_called_once_with()
-    robot.wake_up.assert_called_once_with()
+    robot.goto_target.assert_called_once()
+    robot.wake_up.assert_not_called()
 
 
 def test_wake_up_if_sleeping_skips_non_sleep_head_pose() -> None:

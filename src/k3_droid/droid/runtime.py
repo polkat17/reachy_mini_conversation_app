@@ -24,6 +24,7 @@ from k3_droid.tools.dance import Dance
 from k3_droid.droid.emotes import EmoteGuard
 from k3_droid.droid.notify import send_notification
 from k3_droid.droid.senses import SoundEvent, SoundWatcher, SoundClassifier
+from k3_droid.app_lifecycle import power_up_quietly
 from k3_droid.droid.antenna import AntennaFlickDetector
 from k3_droid.droid.context import OWNER_LAST_SEEN_KEY, mood_for, open_memory
 from k3_droid.droid.journal import (
@@ -357,8 +358,24 @@ class DroidRuntime:
         except DaemonApiError as e:
             logger.warning("Could not clear running daemon moves: %s", e)
         self.deps.movement_manager.stop(reset_to_neutral=False)
-        self._wake_body()
-        return "Motors restored: torque on, wake-up move played, movement restarted."
+        robot.enable_wobbling()
+        if not power_up_quietly(robot, logger):
+            self.deps.movement_manager.start()
+            return "Could not switch the motors on; see Last movement error, or restart the app."
+        self.deps.movement_manager.start()
+        return "Motors restored: torque on, head back to neutral, movement restarted."
+
+    def restart_app(self) -> str:
+        """Ask the daemon to restart this app (rebuilds audio and motion from scratch)."""
+        threading.Thread(target=self._request_restart, daemon=True, name="droid-restart").start()
+        return "Restarting the app; the page comes back in about half a minute."
+
+    def _request_restart(self) -> None:
+        time.sleep(0.5)  # let the HTTP reply reach the browser first
+        try:
+            daemon_request(self.deps.reachy_mini, "/api/apps/restart-current-app", method="POST")
+        except DaemonApiError as e:
+            logger.error("Could not restart the app: %s", e)
 
     # ---- audio ----------------------------------------------------------------
 

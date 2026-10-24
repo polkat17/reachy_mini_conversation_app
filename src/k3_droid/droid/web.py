@@ -167,6 +167,10 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
     def _restore_motors() -> dict[str, Any]:
         return {"status": runtime.restore_motors()}
 
+    @app.post("/droid/api/restart-app")
+    def _restart_app() -> dict[str, Any]:
+        return {"status": runtime.restart_app()}
+
     @app.post("/droid/api/turn/{direction}")
     def _turn(direction: str) -> dict[str, Any]:
         angles = {"left": 45.0, "right": -45.0, "home": None}

@@ -125,6 +125,21 @@ def robot_motor_state(robot: ReachyMini) -> tuple[str | None, bool | None]:
     return (str(mode_text) if mode_text is not None else None), busy
 
 
+def power_up_quietly(robot: ReachyMini, logger: logging.Logger) -> bool:
+    """Turn torque on and glide to the neutral pose without the SDK wake-up sound.
+
+    ``ReachyMini.wake_up()`` plays its sound through the app's own audio output, which can leave the
+    conversation silent when it runs while a session is open.
+    """
+    try:
+        robot.enable_motors()
+        robot.goto_target(np.eye(4), antennas=[-0.1745, 0.1745], duration=1.5, body_yaw=0.0)
+    except Exception as e:
+        logger.error("Failed to power the motors up: %s", e)
+        return False
+    return True
+
+
 def wake_up_if_sleeping(robot: ReachyMini, logger: logging.Logger) -> bool:
     """Run the SDK wake-up movement when Reachy starts from the sleep pose or with its motors off."""
     try:
@@ -137,10 +152,13 @@ def wake_up_if_sleeping(robot: ReachyMini, logger: logging.Logger) -> bool:
     # so it must be woken even when the head is not resting exactly in the sleep pose.
     motor_mode, _ = robot_motor_state(robot)
     motors_off = motor_mode is not None and motor_mode != "enabled"
-    if not (_is_sleep_head_pose(head_pose) or motors_off):
+    if not _is_sleep_head_pose(head_pose):
+        if motors_off:
+            logger.info("Motors are %s outside the sleep pose; switching them on.", motor_mode)
+            return power_up_quietly(robot, logger)
         return False
 
-    logger.info("Robot is asleep (motors %s); running wake-up movement.", motor_mode or "unknown")
+    logger.info("Robot is in sleep pose; running wake-up movement.")
     try:
         robot.enable_motors()
         robot.wake_up()

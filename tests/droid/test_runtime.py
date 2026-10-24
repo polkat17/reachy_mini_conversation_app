@@ -536,6 +536,7 @@ def test_restore_motors_clears_stuck_moves_and_wakes_the_body(tmp_path, monkeypa
     assert result.startswith("Motors restored")
     assert ("POST", "/api/move/stop") in calls
     runtime.deps.reachy_mini.enable_motors.assert_called_once_with()
-    runtime.deps.reachy_mini.wake_up.assert_called_once_with()
+    runtime.deps.reachy_mini.goto_target.assert_called_once()
+    runtime.deps.reachy_mini.wake_up.assert_not_called()  # its sound can leave an open session silent
     manager.stop.assert_called_once_with(reset_to_neutral=False)
     manager.start.assert_called_once_with()
