@@ -27,6 +27,7 @@ async def test_turn_body_turns_relative_to_the_current_heading() -> None:
     assert duration == pytest.approx(1.0)
     assert result == {"status": "turning to 90 degrees from the starting direction"}
     deps.movement_manager.set_moving_state.assert_called_once_with(duration)
+    deps.movement_manager.set_head_tracking.assert_called_once_with(False)
 
 
 @pytest.mark.asyncio
