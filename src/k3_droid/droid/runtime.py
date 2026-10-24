@@ -79,6 +79,15 @@ _UPDATE_HOURS = range(2, 6)
 _DAY_REVIEW_RECHECK_S = 600.0
 
 
+def event_reply_rule(language: str) -> str:
+    """Return the note appended to every system event so the model acts on it instead of reading it out."""
+    return (
+        f"\n(Private instruction for you only: do not read, translate, summarise or describe it, and do not say "
+        f"what you are going to do. Reply only with the words you say to the person, in {language}, and call "
+        "tools silently.)"
+    )
+
+
 class DroidRuntime:
     """Owns the droid's behaviours and follows whichever conversation handler is active."""
 
@@ -242,7 +251,7 @@ class DroidRuntime:
         if handler is None or not handler._is_connected():
             return False
         try:
-            await handler.say(text)
+            await handler.say(f"{text}{event_reply_rule(self.identity.language)}")
         except (RuntimeError, ValueError) as e:
             logger.warning("Droid could not speak event: %s", e)
             return False

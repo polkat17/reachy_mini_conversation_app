@@ -441,3 +441,17 @@ def test_updates_default_to_the_k3_space_on_demand_only(monkeypatch: pytest.Monk
     settings = runtime_mod.DroidSettings.from_env()
     assert settings.update_space == "Polkat/k3-droid"
     assert settings.auto_update is False
+
+
+@pytest.mark.asyncio
+async def test_system_events_carry_the_private_instruction_rule(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every event tells the model to act on it in the owner's language instead of reading it out."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.identity.language = "Russian"
+    runtime.handler = MagicMock(_is_connected=MagicMock(return_value=True), say=AsyncMock())
+
+    assert await runtime.say_event("[SYSTEM EVENT] Pasha is in view. Greet them briefly.")
+
+    sent = runtime.handler.say.await_args.args[0]
+    assert sent.startswith("[SYSTEM EVENT] Pasha is in view.")
+    assert "do not read, translate" in sent and "in Russian" in sent

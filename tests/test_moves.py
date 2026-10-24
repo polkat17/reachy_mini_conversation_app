@@ -232,3 +232,38 @@ def test_to_body_frame_undoes_the_heading() -> None:
     body = manager.to_body_frame(world)
     expected = create_head_pose(0, 0, 0, 0, 0, np.rad2deg(0.7), degrees=True) @ body
     assert np.allclose(expected, world, atol=1e-9)
+
+
+def test_moves_borrow_the_head_from_face_tracking() -> None:
+    """Tracking at full weight overrides head targets, so a move pauses it and the empty queue hands it back."""
+    robot = MagicMock()
+    robot.get_current_head_pose.return_value = np.eye(4)
+    manager = MovementManager(robot)
+    now = manager._now()
+    manager._handle_command("set_head_tracking", True, now)
+    robot.start_head_tracking.reset_mock()
+
+    manager.move_queue.append(_FakeMove(create_head_pose(0, 0, 0, 0, 0, 20, degrees=True)))
+    manager._manage_move_queue(now)
+
+    robot.start_head_tracking.assert_called_once_with(weight=0.0)
+    assert manager._track_anchor is not None
+
+    manager._manage_move_queue(now + 11.0)  # the 10 s move is over and nothing is queued
+
+    robot.start_head_tracking.assert_called_with(weight=1.0)
+    assert manager._track_anchor is None and manager._move_holds_head is False
+
+
+def test_breathing_does_not_pause_face_tracking() -> None:
+    """Idle breathing leaves the head to tracking."""
+    robot = MagicMock()
+    manager = MovementManager(robot)
+    now = manager._now()
+    manager._handle_command("set_head_tracking", True, now)
+    robot.start_head_tracking.reset_mock()
+
+    manager.move_queue.append(BreathingMove(np.eye(4, dtype=np.float32), (0.0, 0.0), 1.0))
+    manager._manage_move_queue(now)
+
+    robot.start_head_tracking.assert_not_called()

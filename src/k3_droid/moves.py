@@ -229,6 +229,8 @@ class MovementManager:
         # Speaking pauses tracking; the captured look-at pose anchors queued moves.
         self._is_speaking = False
         self._track_anchor: NDArray[np.float64] | None = None
+        # Tracking at full weight overrides every head target, so primary moves borrow the head while they play.
+        self._move_holds_head = False
         self._last_commanded_pose: FullBodyPose = clone_full_body_pose(self.state.last_primary_pose)
         self._listening_antennas: Tuple[float, float] = self._last_commanded_pose[1]
         self._antenna_unfreeze_blend = 1.0
@@ -428,6 +430,7 @@ class MovementManager:
                 return
             self._head_tracking = enabled
             self._track_anchor = None
+            self._move_holds_head = False
             # set_speaking is gated off while disabled, so its state would go stale across a toggle.
             self._is_speaking = False
             try:
@@ -449,7 +452,7 @@ class MovementManager:
                     # Pause only once a face is locked, else speech blocks acquisition.
                     self._track_anchor = self.to_body_frame(self.current_robot.get_current_head_pose())
                     self.current_robot.start_head_tracking(weight=0.0)
-                elif not speaking:
+                elif not speaking and not self._move_holds_head:
                     self._track_anchor = None
                     self.current_robot.start_head_tracking(weight=1.0)
             except Exception as e:
@@ -486,6 +489,36 @@ class MovementManager:
                 # Any real move cancels breathing mode flag
                 self._breathing_active = isinstance(self.state.current_move, BreathingMove)
                 logger.debug(f"Starting new move, duration: {self.state.current_move.duration}s")
+                if not self._breathing_active:
+                    self._hold_head_for_move()
+            else:
+                self._release_head_after_move()
+
+    def _hold_head_for_move(self) -> None:
+        """Pause face tracking while a primary move plays, anchored on the current look-at pose."""
+        if not self._head_tracking or self._move_holds_head:
+            return
+        self._move_holds_head = True
+        if self._track_anchor is not None:
+            return  # speaking already paused tracking around this anchor
+        try:
+            self._track_anchor = self.to_body_frame(self.current_robot.get_current_head_pose())
+            self.current_robot.start_head_tracking(weight=0.0)
+        except Exception as e:
+            logger.warning("Could not pause head tracking for a move: %s", e)
+
+    def _release_head_after_move(self) -> None:
+        """Hand the head back to face tracking once the move queue is empty, unless speech still holds it."""
+        if not self._move_holds_head:
+            return
+        self._move_holds_head = False
+        if self._is_speaking:
+            return
+        self._track_anchor = None
+        try:
+            self.current_robot.start_head_tracking(weight=1.0)
+        except Exception as e:
+            logger.warning("Could not resume head tracking after a move: %s", e)
 
     def _manage_breathing(self, current_time: float) -> None:
         """Manage automatic breathing when idle."""
