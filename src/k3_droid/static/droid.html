@@ -63,6 +63,8 @@
       the new direction. The Base row in Status shows the commanded and measured angle.</p>
     <button data-post="/droid/api/restore-motors"
       data-confirm="Stop any stuck move, switch the motors on and move the head back to neutral?">Restore motors</button>
+    <button class="secondary" data-post="/droid/api/test-sound">Robot test sound</button>
+    <button class="secondary" data-post="/droid/api/volume/70">Speaker volume 70%</button>
     <button class="secondary" data-post="/droid/api/restart-app"
       data-confirm="Restart the app? Use it if the droid lost its voice; it is back in about half a minute.">Restart app</button>
     <button class="secondary" data-post="/droid/api/turn/left">Turn left 45°</button>
@@ -101,7 +103,7 @@
     droid_name: "Designation", owner_name: "Owner", activated: "Activated", dormant: "State",
     activation_stage: "Activation stage", in_view: "In view",
     notifications: "Phone notifications",
-    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests", day_review: "Day review", movement: "Movement", motors: "Motors", movement_error: "Last movement error", base: "Base",
+    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests", day_review: "Day review", movement: "Movement", motors: "Motors", speaker: "Speaker", movement_error: "Last movement error", base: "Base",
   };
 
   function show(text) { message.textContent = text; }

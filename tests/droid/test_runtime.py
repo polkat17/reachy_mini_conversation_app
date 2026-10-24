@@ -540,3 +540,27 @@ def test_restore_motors_clears_stuck_moves_and_wakes_the_body(tmp_path, monkeypa
     runtime.deps.reachy_mini.wake_up.assert_not_called()  # its sound can leave an open session silent
     manager.stop.assert_called_once_with(reset_to_neutral=False)
     manager.start.assert_called_once_with()
+
+
+def test_control_page_reports_and_sets_the_speaker_volume(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A muted speaker shows in Status; the page can play the robot's test sound and set the volume."""
+    from k3_droid.droid import web as web_mod
+
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime_mod, "fetch_day_review", MagicMock(return_value=(None, "no review for today yet")))
+    calls: list[tuple[str, str, object]] = []
+
+    def fake_daemon(robot, path, method="GET", payload=None):  # noqa: ANN001, ANN202
+        calls.append((method, path, payload))
+        return {"volume": 0} if path == "/api/volume/current" else {"message": "Test sound played"}
+
+    monkeypatch.setattr(web_mod, "daemon_request", fake_daemon)
+    app = FastAPI()
+    register_droid_routes(app, runtime)
+    client = TestClient(app)
+
+    assert client.get("/droid/api/status").json()["speaker"] == "volume 0% (muted: raise it)"
+    assert "Test sound played" in client.post("/droid/api/test-sound").json()["status"]
+    assert client.post("/droid/api/volume/70").json() == {"status": "Speaker volume set to 70%."}
+    assert ("POST", "/api/volume/set", {"volume": 70}) in calls
+    assert client.post("/droid/api/volume/150").status_code == 400

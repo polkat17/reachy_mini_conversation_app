@@ -8,6 +8,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from k3_droid.daemon_api import DaemonApiError, daemon_request
 from k3_droid.droid.notify import notifications_enabled
 from k3_droid.app_lifecycle import robot_motor_state
 from k3_droid.droid.runtime import DroidRuntime
@@ -40,9 +41,19 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "day_review": runtime.day_review_note,
         "movement": "running" if runtime.deps.movement_manager.is_running() else "stopped (asleep)",
         "motors": _motors_line(runtime),
+        "speaker": _speaker_line(runtime),
         "movement_error": runtime.deps.movement_manager.last_command_error or "none",
         "base": _base_line(runtime),
     }
+
+
+def _speaker_line(runtime: DroidRuntime) -> str:
+    """Return the robot's speaker volume as the daemon reports it."""
+    try:
+        volume = daemon_request(runtime.deps.reachy_mini, "/api/volume/current").get("volume")
+    except Exception as e:  # a status line must never break the page
+        return f"unknown ({type(e).__name__})"
+    return f"volume {volume}%" + (" (muted: raise it)" if volume == 0 else "")
 
 
 def _motors_line(runtime: DroidRuntime) -> str:
@@ -166,6 +177,24 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
     @app.post("/droid/api/restore-motors")
     def _restore_motors() -> dict[str, Any]:
         return {"status": runtime.restore_motors()}
+
+    @app.post("/droid/api/test-sound")
+    def _test_sound() -> dict[str, Any]:
+        try:
+            result = daemon_request(runtime.deps.reachy_mini, "/api/volume/test-sound", method="POST")
+        except DaemonApiError as e:
+            raise HTTPException(status_code=502, detail=f"The robot could not play the test sound: {e}") from e
+        return {"status": f"Robot test sound: {result.get('message', 'played')}. Did you hear it?"}
+
+    @app.post("/droid/api/volume/{level}")
+    def _set_volume(level: int) -> dict[str, Any]:
+        if not 0 <= level <= 100:
+            raise HTTPException(status_code=400, detail="volume must be 0-100")
+        try:
+            daemon_request(runtime.deps.reachy_mini, "/api/volume/set", method="POST", payload={"volume": level})
+        except DaemonApiError as e:
+            raise HTTPException(status_code=502, detail=f"The robot did not change the volume: {e}") from e
+        return {"status": f"Speaker volume set to {level}%."}
 
     @app.post("/droid/api/restart-app")
     def _restart_app() -> dict[str, Any]:
