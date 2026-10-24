@@ -154,10 +154,15 @@ def _normalize_hf_connection_mode(value: str | None) -> str | None:
     return candidate
 
 
+DEFAULT_TRANSCRIPTION_LANGUAGE = (
+    "ru"  # the K3 droid speaks Russian unless REALTIME_TRANSCRIPTION_LANGUAGE says otherwise
+)
+
+
 def _normalize_transcription_language(value: str | None) -> str:
     """Return the configured realtime transcription language."""
     candidate = (value or "").strip()
-    return candidate or "en"
+    return candidate or DEFAULT_TRANSCRIPTION_LANGUAGE
 
 
 @dataclass(frozen=True)

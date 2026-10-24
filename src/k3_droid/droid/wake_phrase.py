@@ -12,44 +12,59 @@ import httpx
 import numpy as np
 from numpy.typing import NDArray
 
+from k3_droid.config import config
 from k3_droid.droid.audio import LISTENER_SAMPLE_RATE
 
 
 logger = logging.getLogger(__name__)
 
-VOSK_MODEL_NAME = "vosk-model-small-en-us-0.15"
-VOSK_MODEL_URL = f"https://alphacephei.com/vosk/models/{VOSK_MODEL_NAME}.zip"
+# Small offline models (about 40-45 MB each), picked by the conversation language; English is the fallback.
+VOSK_MODELS = {"en": "vosk-model-small-en-us-0.15", "ru": "vosk-model-small-ru-0.22"}
+VOSK_MODEL_BASE_URL = "https://alphacephei.com/vosk/models"
 _DOWNLOAD_TIMEOUT_S = 300.0
-_DIGIT_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+_DIGIT_WORDS = {
+    "en": ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"),
+    "ru": ("ноль", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"),
+}
 
 
-def normalize_phrase(phrase: str) -> str:
+def phrase_language(language: str | None = None) -> str:
+    """Return the supported wake-phrase language for a language code, from the config when not given."""
+    code = (language if language is not None else config.REALTIME_TRANSCRIPTION_LANGUAGE) or "en"
+    code = code.split("-")[0].lower()
+    return code if code in VOSK_MODELS else "en"
+
+
+def normalize_phrase(phrase: str, language: str | None = None) -> str:
     """Lower-case, spell out digits and drop punctuation: ``"Hey K3!"`` becomes ``"hey k three"``."""
-    spelled = re.sub(r"\d", lambda match: f" {_DIGIT_WORDS[int(match.group())]} ", phrase.lower())
-    return " ".join(re.sub(r"[^a-z' ]+", " ", spelled).split())
+    digits = _DIGIT_WORDS[phrase_language(language)]
+    spelled = re.sub(r"\d", lambda match: f" {digits[int(match.group())]} ", phrase.lower().replace("ё", "е"))
+    return " ".join(re.sub(r"[^a-zа-я' ]+", " ", spelled).split())
 
 
-def validate_phrase(phrase: str, droid_name: str) -> str | None:
+def validate_phrase(phrase: str, droid_name: str, language: str | None = None) -> str | None:
     """Return why ``phrase`` would make a poor wake phrase, or None when it is fine."""
-    words = normalize_phrase(phrase).split()
+    words = normalize_phrase(phrase, language).split()
     if not 2 <= len(words) <= 4:
         return "Use two to four words."
-    if normalize_phrase(phrase) == normalize_phrase(droid_name):
+    if normalize_phrase(phrase, language) == normalize_phrase(droid_name, language):
         return "Add a word to the name so ordinary mentions do not wake me, for example 'hey' plus the name."
     if len(" ".join(words)) < 7:
         return "Use a longer phrase; very short phrases trigger by accident."
     return None
 
 
-def ensure_vosk_model(models_dir: Path) -> Path:
-    """Download and unpack the small English Vosk model (about 40 MB) once; returns its directory."""
-    model_dir = models_dir / VOSK_MODEL_NAME
+def ensure_vosk_model(models_dir: Path, language: str | None = None) -> Path:
+    """Download and unpack the small Vosk model for the language once; returns its directory."""
+    model_name = VOSK_MODELS[phrase_language(language)]
+    model_dir = models_dir / model_name
     if (model_dir / "conf").is_dir():
         return model_dir
     models_dir.mkdir(parents=True, exist_ok=True)
-    archive = models_dir / f"{VOSK_MODEL_NAME}.zip.part"
-    logger.info("Downloading the wake phrase model from %s", VOSK_MODEL_URL)
-    with httpx.stream("GET", VOSK_MODEL_URL, timeout=_DOWNLOAD_TIMEOUT_S, follow_redirects=True) as response:
+    archive = models_dir / f"{model_name}.zip.part"
+    url = f"{VOSK_MODEL_BASE_URL}/{model_name}.zip"
+    logger.info("Downloading the wake phrase model from %s", url)
+    with httpx.stream("GET", url, timeout=_DOWNLOAD_TIMEOUT_S, follow_redirects=True) as response:
         response.raise_for_status()
         with archive.open("wb") as file:
             for chunk in response.iter_bytes():

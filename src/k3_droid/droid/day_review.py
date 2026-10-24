@@ -26,18 +26,20 @@ logger = logging.getLogger(__name__)
 DAY_REVIEW_FILENAME = "day_review.json"
 
 
-def fetch_day_review(dataset: str, token: str | None, today: date) -> dict[str, Any] | None:
-    """Return today's review from the dataset, or None when it is missing, stale or unreadable."""
+def fetch_day_review(dataset: str, token: str | None, today: date) -> tuple[dict[str, Any] | None, str]:
+    """Return today's review from the dataset (None when missing, stale or unreadable) and a status note."""
     try:
         path = hf_hub_download(dataset, DAY_REVIEW_FILENAME, repo_type="dataset", token=token or None)
         with open(path, encoding="utf-8") as f:
             review = json.load(f)
     except (HfHubHTTPError, OSError, ValueError) as e:
         logger.warning("Could not read the day review from %s: %s", dataset, e)
-        return None
-    if not isinstance(review, dict) or review.get("date") != today.isoformat():
-        return None
-    return review
+        return None, f"could not read {dataset}: {type(e).__name__}"
+    if not isinstance(review, dict):
+        return None, "the review file is not a JSON object"
+    if review.get("date") != today.isoformat():
+        return None, f"no review for today yet (latest is for {review.get('date') or 'an unknown day'})"
+    return review, f"today's review loaded from {dataset}"
 
 
 def briefing_line(review: dict[str, Any]) -> str:

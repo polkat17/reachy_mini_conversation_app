@@ -52,7 +52,7 @@ class Identity:
     voice: str = ""
     humour: str = "dry"
     talkativeness: str = "brief"
-    language: str = "English"
+    language: str = "Russian"
     interests: list[str] = field(default_factory=list)
     avoid_topics: list[str] = field(default_factory=list)
     protocols: InteractionProtocols = field(default_factory=InteractionProtocols)

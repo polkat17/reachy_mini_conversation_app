@@ -320,7 +320,7 @@ async def test_run_realtime_session_uses_default_voice_for_lb_allocated_sessions
     # HF at 16 kHz passes None so the backend uses its optimal default (16 kHz).
     assert session["audio"]["input"]["format"]["rate"] is None
     assert session["audio"]["output"]["format"]["rate"] is None
-    assert session["audio"]["input"]["transcription"]["language"] == "en"
+    assert session["audio"]["input"]["transcription"]["language"] == "ru"
     assert session["audio"]["output"]["voice"] == HF_DEFAULT_VOICE
 
 

@@ -28,21 +28,29 @@ def _serve(monkeypatch: pytest.MonkeyPatch, tmp_path, payload: object) -> None:
 def test_fetch_day_review_returns_todays_review(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Today's review is returned as written by the routine."""
     _serve(monkeypatch, tmp_path, REVIEW)
-    assert fetch_day_review("owner/briefing", "token", date(2026, 10, 19)) == REVIEW
+    review, note = fetch_day_review("owner/briefing", "token", date(2026, 10, 19))
+    assert review == REVIEW
+    assert note == "today's review loaded from owner/briefing"
 
 
 def test_fetch_day_review_ignores_a_stale_or_broken_file(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Yesterday's review, non-objects and download failures all read as no review."""
     _serve(monkeypatch, tmp_path, REVIEW)
-    assert fetch_day_review("owner/briefing", "token", date(2026, 10, 20)) is None
+    assert fetch_day_review("owner/briefing", "token", date(2026, 10, 20)) == (
+        None,
+        "no review for today yet (latest is for 2026-10-19)",
+    )
     _serve(monkeypatch, tmp_path, ["not", "a", "review"])
-    assert fetch_day_review("owner/briefing", "token", date(2026, 10, 19)) is None
+    assert fetch_day_review("owner/briefing", "token", date(2026, 10, 19))[0] is None
 
     def fail(*args: object, **kwargs: object) -> str:
         raise OSError("offline")
 
     monkeypatch.setattr(day_review_mod, "hf_hub_download", fail)
-    assert fetch_day_review("owner/briefing", "token", date(2026, 10, 19)) is None
+    assert fetch_day_review("owner/briefing", "token", date(2026, 10, 19)) == (
+        None,
+        "could not read owner/briefing: OSError",
+    )
 
 
 def test_briefing_line_keeps_the_summary_and_top_priorities() -> None:
@@ -63,7 +71,7 @@ async def test_morning_briefing_includes_the_day_review(tmp_path, monkeypatch: p
     """The first morning sighting adds the review, and the runtime caches the dataset read."""
     monkeypatch.setenv("DROID_DAY_REVIEW_DATASET", "owner/briefing")
     monkeypatch.setattr(runtime_mod, "datetime", _FrozenDatetime)
-    fetch = MagicMock(return_value=REVIEW)
+    fetch = MagicMock(return_value=(REVIEW, "today's review loaded from owner/briefing"))
     monkeypatch.setattr(runtime_mod, "fetch_day_review", fetch)
     runtime = runtime_mod.DroidRuntime(MagicMock(), tmp_path)
     runtime.identity = MagicMock(activated=True, owner_name="Pasha")
@@ -77,6 +85,7 @@ async def test_morning_briefing_includes_the_day_review(tmp_path, monkeypatch: p
     assert "budget review matters most" in prompt
     assert "day_review tool" in prompt
     assert runtime.day_review() == REVIEW
+    assert runtime.day_review_note == "today's review loaded from owner/briefing"
     fetch.assert_called_once()
 
 

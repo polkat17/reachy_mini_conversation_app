@@ -130,6 +130,7 @@ def test_web_api_reports_status_and_wakes(tmp_path, monkeypatch: pytest.MonkeyPa
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.request_wake = MagicMock(return_value={"status": "waking"})  # type: ignore[method-assign]
     runtime.request_dormant = MagicMock(return_value={"error": "not running"})  # type: ignore[method-assign]
+    monkeypatch.setattr(runtime_mod, "fetch_day_review", MagicMock(return_value=(None, "no review for today yet")))
     app = FastAPI()
     register_droid_routes(app, runtime)
     client = TestClient(app)
@@ -139,6 +140,7 @@ def test_web_api_reports_status_and_wakes(tmp_path, monkeypatch: pytest.MonkeyPa
     slept = client.post("/droid/api/sleep")
 
     assert status["droid_name"] == "K3-L0" and status["dormant"] is False
+    assert status["day_review"] == "no review for today yet"
     assert woke.json() == {"status": "waking"}
     assert slept.status_code == 409
     assert client.get("/droid").status_code == 200

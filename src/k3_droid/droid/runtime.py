@@ -93,6 +93,7 @@ class DroidRuntime:
         self.face_registry = FaceRegistry(self.data_dir)
         self._day_review: dict[str, Any] | None = None
         self._day_review_checked_at: float | None = None
+        self.day_review_note = "not checked yet"
         self.presence: PresenceSensor | None = None
         self.wake_spotter = WakePhraseSpotter(self.data_dir / "models")
         self.activation = ActivationProgress(self.data_dir)
@@ -664,11 +665,12 @@ class DroidRuntime:
         """Return today's review written by the Claude routine, re-checking the dataset at most every 10 minutes."""
         dataset = DroidSettings.from_env().day_review_dataset
         if not dataset:
+            self.day_review_note = "not set up (DROID_DAY_REVIEW_DATASET)"
             return None
         now = time.monotonic()
         today = datetime.now().date()
         if self._day_review_checked_at is None or now - self._day_review_checked_at >= _DAY_REVIEW_RECHECK_S:
-            self._day_review = fetch_day_review(dataset, config.HF_TOKEN, today)
+            self._day_review, self.day_review_note = fetch_day_review(dataset, config.HF_TOKEN, today)
             self._day_review_checked_at = now
         review = self._day_review
         return review if review is not None and review.get("date") == today.isoformat() else None

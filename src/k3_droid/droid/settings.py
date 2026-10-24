@@ -9,6 +9,9 @@ from k3_droid.config import _env_flag
 
 logger = logging.getLogger(__name__)
 
+# Where Pasha's weekday-morning Claude routine saves the day review; DROID_DAY_REVIEW_DATASET points elsewhere.
+DEFAULT_DAY_REVIEW_DATASET = "Polkat/k3-droid-briefing"
+
 
 def _env_float(name: str, default: float) -> float:
     raw = (os.getenv(name) or "").strip()
@@ -60,7 +63,7 @@ class DroidSettings:
             home_assistant_token=(os.getenv("DROID_HOME_ASSISTANT_TOKEN") or "").strip(),
             update_space=(os.getenv("DROID_UPDATE_SPACE") or "").strip(),
             auto_update=_env_flag("DROID_AUTO_UPDATE", default=True),
-            day_review_dataset=(os.getenv("DROID_DAY_REVIEW_DATASET") or "").strip(),
+            day_review_dataset=(os.getenv("DROID_DAY_REVIEW_DATASET") or DEFAULT_DAY_REVIEW_DATASET).strip(),
             # Defaults sized for the Wireless robot's CM4: the camera loop sleeps 2 s between looks.
             presence_interval_s=max(0.5, _env_float("DROID_PRESENCE_INTERVAL_S", 2.0)),
             watch_cats=_env_flag("DROID_WATCH_CATS", default=True),

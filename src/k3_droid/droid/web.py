@@ -19,6 +19,7 @@ _PAGE = Path(__file__).parents[1] / "static" / "droid.html"
 def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
     """Return the state shown on the control page."""
     identity = runtime.identity
+    runtime.day_review()  # refreshes day_review_note; the dataset is re-read at most every 10 minutes
     return {
         "droid_name": identity.droid_name,
         "owner_name": identity.owner_name,
@@ -34,6 +35,7 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "mood": runtime.mood() if identity.activated else "",
         "update": _software_line(runtime),
         "upgrade_requests": upgrades_enabled(runtime.settings),
+        "day_review": runtime.day_review_note,
     }
 
 

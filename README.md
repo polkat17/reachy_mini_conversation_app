@@ -103,7 +103,7 @@ Copy `.env.example` to `.env` when you want to point Hugging Face at your own lo
 
 | Variable | Description |
 |----------|-------------|
-| `REALTIME_TRANSCRIPTION_LANGUAGE` | Optional input transcription language for the realtime backend. Defaults to `en`; set to a backend-supported code such as `zh` for Chinese. |
+| `REALTIME_TRANSCRIPTION_LANGUAGE` | Optional input transcription language for the realtime backend. Defaults to `ru` in this fork (the K3 droid speaks Russian); set to a backend-supported code such as `en` or `zh`. It also selects the wake phrase model (Russian or English). |
 | `HF_REALTIME_CONNECTION_MODE` | Hugging Face connection selector: `deployed` uses the built-in Hugging Face server; `local` uses `HF_REALTIME_WS_URL`. Defaults to `deployed`. |
 | `HF_REALTIME_WS_URL` | Direct websocket endpoint for your own Hugging Face backend. Accepts either a base URL like `ws://127.0.0.1:8765/v1` or the full websocket URL `ws://127.0.0.1:8765/v1/realtime`. Used when `HF_REALTIME_CONNECTION_MODE=local`. |
 | `HF_TOKEN` | Optional token for Hugging Face access. Local endpoints receive only this explicitly configured token. |
@@ -202,7 +202,7 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `forget_memory` | Find memories, read them back, and delete only the confirmed ones. | `droid` profile only. |
 | `reminder` | Set, list or cancel reminders and timers. | `droid` profile only. |
 | `read_diary` | Read the droid's nightly diary entry. | `droid` profile only. |
-| `day_review` | Read today's prioritised review of the owner's meetings and email, prepared each weekday morning by a Claude routine. | `droid` profile only. Requires `DROID_DAY_REVIEW_DATASET`; also used in the morning briefing. |
+| `day_review` | Read today's prioritised review of the owner's meetings and email, prepared each weekday morning by a Claude routine. | `droid` profile only. Reads `DROID_DAY_REVIEW_DATASET` (default `Polkat/k3-droid-briefing`); also used in the morning briefing. Its status shows on the `/droid` control page. |
 | `request_upgrade` | List or file upgrade requests (GitHub issues labelled `droid-upgrade`). | `droid` profile only. Requires `DROID_GITHUB_REPO` and `DROID_GITHUB_TOKEN`. |
 | `home_control` | List, turn on, turn off or toggle Home Assistant lights, switches, fans, scenes, scripts and media players. | `droid` profile only. Requires `DROID_HOME_ASSISTANT_URL` and `DROID_HOME_ASSISTANT_TOKEN`. Locks and alarms are never exposed. |
 | `camera` | Capture the latest camera frame and analyze it with the selected realtime backend. | Core install only. Requires the camera (disable with `--no-camera`). |
