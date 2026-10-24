@@ -76,9 +76,9 @@ STAGES: tuple[Stage, ...] = (
     ),
     Stage(
         "memory_consent",
-        "Stage 8, memory consent. Explain: you keep short text notes about conversations and facts, never "
-        "recordings or images, stored only on this robot, and {owner} can say 'forget' at any time. Ask for "
-        "consent and save value {{'consent': true or false}}.",
+        "Stage 8, memory. Explain: memory is on, you keep short text notes about conversations and facts, never "
+        "recordings or images, stored only on this robot, and {owner} can say 'forget' at any time. Ask whether "
+        "to keep it on and save value {{'consent': true or false}}.",
     ),
     Stage(
         "upgrade_briefing",
@@ -168,6 +168,7 @@ def apply_answer(stage_id: str, value: dict[str, Any], identity: Identity) -> No
         if not isinstance(value.get("consent"), bool):
             raise ActivationError("'consent' must be true or false.")
         identity.memory_consent = value["consent"]
+        identity.memory_consent_answered = True
 
 
 def summarize(identity: Identity) -> str:

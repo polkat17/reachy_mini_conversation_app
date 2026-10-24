@@ -57,7 +57,8 @@ class Identity:
     protocols: InteractionProtocols = field(default_factory=InteractionProtocols)
     household: list[HouseholdMember] = field(default_factory=list)
     guest_policy: str = "friendly, but never share the owner's memories"
-    memory_consent: bool = False
+    memory_consent: bool = True
+    memory_consent_answered: bool = False  # set once the owner answered the memory stage
     quirks: list[str] = field(default_factory=list)
     activated: bool = False
 
@@ -97,7 +98,9 @@ def _identity_from_mapping(raw: dict[str, Any]) -> Identity:
     identity.interests = _string_list(raw.get("interests"))
     identity.avoid_topics = _string_list(raw.get("avoid_topics"))
     identity.quirks = _string_list(raw.get("quirks"))
-    identity.memory_consent = raw.get("memory_consent") is True
+    # Memory is on unless the owner said no during activation; older files saved the old "off" default unanswered.
+    identity.memory_consent_answered = raw.get("memory_consent_answered") is True
+    identity.memory_consent = raw.get("memory_consent") is True if identity.memory_consent_answered else True
     identity.activated = raw.get("activated") is True
 
     protocols = raw.get("protocols")
