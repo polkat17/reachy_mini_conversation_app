@@ -48,20 +48,23 @@ class TurnBody(Tool):
         if not face_home and (isinstance(angle_raw, bool) or not isinstance(angle_raw, (int, float))):
             return {"error": "angle_degrees must be a number"}
         logger.info("Tool call: turn_body angle_degrees=%s face_home=%s", angle_raw, face_home)
+        return turn_base(deps.movement_manager, None if face_home else float(angle_raw))
 
-        movement_manager = deps.movement_manager
-        # Tracking keeps the head on the person, and the robot limits how far the base may twist away from the head,
-        # so it would pull the body straight back.
-        movement_manager.set_head_tracking(False)
-        start = movement_manager.body_heading_target()
-        requested = 0.0 if face_home else start + float(np.deg2rad(float(angle_raw)))
-        turn_deg = abs(float(np.rad2deg(np.clip(requested, -MAX_BODY_HEADING_RAD, MAX_BODY_HEADING_RAD) - start)))
-        duration = max(MIN_TURN_DURATION_S, turn_deg / TURN_SPEED_DEG_PER_S)
-        heading = movement_manager.turn_body(requested, duration)
-        movement_manager.set_moving_state(duration)
 
-        heading_deg = round(float(np.rad2deg(heading)))
-        result: Dict[str, Any] = {"status": f"turning to {heading_deg} degrees from the starting direction"}
-        if abs(heading - requested) > 1e-6:
-            result["note"] = "reached the base's turning limit; stopped short of the requested angle"
-        return result
+def turn_base(movement_manager: Any, angle_degrees: float | None) -> Dict[str, Any]:
+    """Turn the base by ``angle_degrees`` (positive is left), or back home when None; shared with the control page."""
+    # Tracking keeps the head on the person, and the robot limits how far the base may twist away from the head,
+    # so it would pull the body straight back.
+    movement_manager.set_head_tracking(False)
+    start = movement_manager.body_heading_target()
+    requested = 0.0 if angle_degrees is None else start + float(np.deg2rad(angle_degrees))
+    turn_deg = abs(float(np.rad2deg(np.clip(requested, -MAX_BODY_HEADING_RAD, MAX_BODY_HEADING_RAD) - start)))
+    duration = max(MIN_TURN_DURATION_S, turn_deg / TURN_SPEED_DEG_PER_S)
+    heading = movement_manager.turn_body(requested, duration)
+    movement_manager.set_moving_state(duration)
+
+    heading_deg = round(float(np.rad2deg(heading)))
+    result: Dict[str, Any] = {"status": f"turning to {heading_deg} degrees from the starting direction"}
+    if abs(heading - requested) > 1e-6:
+        result["note"] = "reached the base's turning limit; stopped short of the requested angle"
+    return result

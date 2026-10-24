@@ -494,3 +494,26 @@ async def test_system_events_carry_the_private_instruction_rule(tmp_path, monkey
     sent = runtime.handler.say.await_args.args[0]
     assert sent.startswith("[SYSTEM EVENT] Pasha is in view.")
     assert "do not read, translate" in sent and "in Russian" in sent
+
+
+def test_control_page_turns_the_base_and_reports_its_angle(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Base buttons turn without the conversation, and Status shows commanded versus measured yaw."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime_mod, "fetch_day_review", MagicMock(return_value=(None, "no review for today yet")))
+    manager = runtime.deps.movement_manager
+    manager.body_heading_target.return_value = 0.0
+    manager.turn_body.side_effect = lambda heading, duration: heading
+    manager.get_status.return_value = {"last_commanded_pose": {"body_yaw": np.deg2rad(45)}}
+    manager.head_tracking_enabled.return_value = False
+    runtime.deps.reachy_mini.get_current_joint_positions.return_value = ([0.0] * 7, [0.0, 0.0])
+    app = FastAPI()
+    register_droid_routes(app, runtime)
+    client = TestClient(app)
+
+    turned = client.post("/droid/api/turn/left").json()
+    status = client.get("/droid/api/status").json()
+
+    assert turned["status"] == "turning to 45 degrees from the starting direction"
+    manager.set_head_tracking.assert_called_with(False)
+    assert status["base"] == "commanded 45°, measured 0°, face tracking off"
+    assert client.post("/droid/api/turn/up").status_code == 404

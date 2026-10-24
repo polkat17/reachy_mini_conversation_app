@@ -334,6 +334,10 @@ class MovementManager:
         self._command_queue.put(("turn_body", (clamped, max(0.0, float(duration)))))
         return clamped
 
+    def head_tracking_enabled(self) -> bool:
+        """Return whether face tracking is switched on (read by the control page)."""
+        return self._head_tracking
+
     def body_heading(self) -> float:
         """Return the heading the base faces right now, in radians."""
         with self._shared_state_lock:

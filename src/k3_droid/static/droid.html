@@ -57,6 +57,15 @@
   </section>
 
   <section>
+    <h2>Base</h2>
+    <p>Turn the base directly, without the conversation. Face tracking switches off so the droid keeps facing
+      the new direction. The Base row in Status shows the commanded and measured angle.</p>
+    <button class="secondary" data-post="/droid/api/turn/left">Turn left 45°</button>
+    <button class="secondary" data-post="/droid/api/turn/home">Face front</button>
+    <button class="secondary" data-post="/droid/api/turn/right">Turn right 45°</button>
+  </section>
+
+  <section>
     <h2>Activation</h2>
     <p>Finish activation now and keep the defaults for the stages not done yet (Russian, dry humour, brief
       replies, memory on). You can change any of them later by asking the droid to redo a stage.</p>
@@ -87,7 +96,7 @@
     droid_name: "Designation", owner_name: "Owner", activated: "Activated", dormant: "State",
     activation_stage: "Activation stage", in_view: "In view",
     notifications: "Phone notifications",
-    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests", day_review: "Day review",
+    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests", day_review: "Day review", base: "Base",
   };
 
   function show(text) { message.textContent = text; }

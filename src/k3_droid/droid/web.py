@@ -1,5 +1,6 @@
 """The droid control page (``/droid``) and its JSON API on the app's settings server."""
 
+import math
 from typing import Any
 from pathlib import Path
 from datetime import datetime
@@ -11,6 +12,7 @@ from k3_droid.droid.notify import notifications_enabled
 from k3_droid.droid.runtime import DroidRuntime
 from k3_droid.droid.updater import load_update_state
 from k3_droid.droid.upgrades import upgrades_enabled
+from k3_droid.tools.turn_body import turn_base
 
 
 _PAGE = Path(__file__).parents[1] / "static" / "droid.html"
@@ -35,7 +37,22 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "update": _software_line(runtime),
         "upgrade_requests": upgrades_enabled(runtime.settings),
         "day_review": runtime.day_review_note,
+        "base": _base_line(runtime),
     }
+
+
+def _base_line(runtime: DroidRuntime) -> str:
+    """Commanded versus measured base angle, to tell a dropped command from a base that does not follow."""
+    manager = runtime.deps.movement_manager
+    try:
+        commanded = manager.get_status()["last_commanded_pose"]["body_yaw"]
+        head_joints, _ = runtime.deps.reachy_mini.get_current_joint_positions()
+        measured = float(head_joints[0])
+        tracking = "on" if manager.head_tracking_enabled() else "off"
+    except Exception as e:
+        return f"unavailable ({type(e).__name__})"
+    commanded_text = "none yet" if commanded is None else f"{math.degrees(float(commanded)):.0f}°"
+    return f"commanded {commanded_text}, measured {math.degrees(measured):.0f}°, face tracking {tracking}"
 
 
 def _software_line(runtime: DroidRuntime) -> str:
@@ -133,6 +150,13 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
         if not runtime.submit(runtime.complete_activation()):
             raise HTTPException(status_code=409, detail="the droid runtime is not running yet")
         return {"status": "Activated. Stages not done yet keep their defaults; say 'redo' to change one."}
+
+    @app.post("/droid/api/turn/{direction}")
+    def _turn(direction: str) -> dict[str, Any]:
+        angles = {"left": 45.0, "right": -45.0, "home": None}
+        if direction not in angles:
+            raise HTTPException(status_code=404, detail="direction must be left, right or home")
+        return turn_base(runtime.deps.movement_manager, angles[direction])
 
     @app.post("/droid/api/update-now")
     def _update_now() -> dict[str, Any]:
