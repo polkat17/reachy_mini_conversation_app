@@ -1,5 +1,6 @@
 """The droid control page (``/droid``) and its JSON API on the app's settings server."""
 
+import os
 import math
 from typing import Any
 from pathlib import Path
@@ -40,6 +41,8 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "upgrade_requests": upgrades_enabled(runtime.settings),
         "day_review": runtime.day_review_note,
         "movement": "running" if runtime.deps.movement_manager.is_running() else "stopped (asleep)",
+        "connection": "ok" if runtime.robot_connected() else f"lost ({runtime.connection_note or 'just now'})",
+        "load": _load_line(),
         "motors": _motors_line(runtime),
         "speaker": _speaker_line(runtime),
         "motor_watchdog": (
@@ -50,6 +53,16 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "movement_error": runtime.deps.movement_manager.last_command_error or "none",
         "base": _base_line(runtime),
     }
+
+
+def _load_line() -> str:
+    """Return the onboard computer's 1-minute load average against its core count."""
+    try:
+        load = os.getloadavg()[0]
+    except OSError:
+        return "unknown"
+    cores = os.cpu_count() or 1
+    return f"{load:.1f} on {cores} cores" + (" (overloaded)" if load > cores * 1.5 else "")
 
 
 def _speaker_line(runtime: DroidRuntime) -> str:

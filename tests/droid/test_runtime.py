@@ -596,3 +596,45 @@ async def test_motor_watchdog_switches_limp_motors_back_on_while_awake(
     runtime.deps.movement_manager.is_running.return_value = False  # asleep on purpose
     await runtime._watch_motors()
     assert power_up.call_count == 1
+
+
+def test_restore_motors_restarts_movement_even_when_a_robot_call_fails(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dropped link mid-restore must not leave the control loop stopped (it showed Internal Server Error)."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime_mod, "daemon_request", lambda *args, **kwargs: [])
+    runtime.deps.reachy_mini.enable_wobbling.side_effect = ConnectionError("Lost connection with the server.")
+
+    result = runtime.restore_motors()
+
+    assert result.startswith("Could not switch the motors on")
+    runtime.deps.movement_manager.start.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_connection_watchdog_restarts_the_app_after_a_lasting_drop(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The SDK never reconnects, so a link down for 15 s restarts the app, at most once per cooldown."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(runtime_mod.time, "monotonic", lambda: clock["now"])
+    runtime.deps.reachy_mini.client._is_alive = False
+    runtime.restart_app = MagicMock(return_value="restarting")  # type: ignore[method-assign]
+
+    await runtime._watch_connection()
+    assert runtime.connection_lost_since == 1000.0 and "lost at" in runtime.connection_note
+    clock["now"] += 10.0
+    await runtime._watch_connection()
+    runtime.restart_app.assert_not_called()
+    clock["now"] += 6.0
+    await runtime._watch_connection()
+    runtime.restart_app.assert_called_once_with()
+    clock["now"] += 60.0
+    await runtime._watch_connection()
+    runtime.restart_app.assert_called_once_with()  # cooldown
+
+    runtime.deps.reachy_mini.client._is_alive = True
+    await runtime._watch_connection()
+    assert runtime.connection_lost_since is None

@@ -81,6 +81,8 @@ _UPDATE_CHECK_INTERVAL_S = 20 * 3600.0
 _UPDATE_HOURS = range(2, 6)
 _DAY_REVIEW_RECHECK_S = 600.0
 _MOTOR_CHECK_INTERVAL_S = 5.0
+_CONNECTION_LOST_RESTART_S = 15.0
+_CONNECTION_RESTART_COOLDOWN_S = 600.0
 
 
 def event_reply_rule(language: str) -> str:
@@ -131,6 +133,9 @@ class DroidRuntime:
         self._last_motor_check = 0.0
         self.motor_restores = 0
         self.motor_restore_note = ""
+        self.connection_lost_since: float | None = None
+        self.connection_note = ""
+        self._last_connection_restart = -_CONNECTION_RESTART_COOLDOWN_S
         self._emotion_tool = PlayEmotion()
         self._beep_tool = Beep()
         self._move_head_tool = MoveHead()
@@ -351,8 +356,8 @@ class DroidRuntime:
         if now - self._last_motor_check < _MOTOR_CHECK_INTERVAL_S:
             return
         self._last_motor_check = now
-        if self._transition_lock.locked() or not self.deps.movement_manager.is_running():
-            return  # falling asleep or waking up on purpose
+        if self._transition_lock.locked() or not self.deps.movement_manager.is_running() or not self.robot_connected():
+            return  # falling asleep or waking up on purpose, or no link to the robot (the connection watchdog acts)
         robot = self.deps.reachy_mini
         mode, busy = await asyncio.to_thread(robot_motor_state, robot)
         if mode is None or mode == "enabled" or busy:
@@ -380,13 +385,41 @@ class DroidRuntime:
                 daemon_request(robot, "/api/move/stop", method="POST", payload=move)
         except DaemonApiError as e:
             logger.warning("Could not clear running daemon moves: %s", e)
+        if not self.robot_connected():
+            return "K3 has lost its connection to the robot; use Restart app (or restart the robot)."
         self.deps.movement_manager.stop(reset_to_neutral=False)
-        robot.enable_wobbling()
-        if not power_up_quietly(robot, logger):
+        try:
+            robot.enable_wobbling()
+            restored = power_up_quietly(robot, logger)
+        except Exception as e:  # never leave the control loop stopped behind a failed call
+            logger.error("Restoring the motors failed: %s", e)
+            restored = False
+        finally:
             self.deps.movement_manager.start()
-            return "Could not switch the motors on; see Last movement error, or restart the app."
-        self.deps.movement_manager.start()
+        if not restored:
+            return "Could not switch the motors on; see Last movement error, or use Restart app."
         return "Motors restored: torque on, head back to neutral, movement restarted."
+
+    def robot_connected(self) -> bool:
+        """Return whether the SDK link to the daemon is alive (it drops when the state stream stalls for a second)."""
+        return bool(getattr(self.deps.reachy_mini.client, "_is_alive", True))
+
+    async def _watch_connection(self) -> None:
+        """Restart the app when the SDK link to the daemon stays down while awake: the SDK never reconnects."""
+        if self.robot_connected():
+            self.connection_lost_since = None
+            return
+        now = time.monotonic()
+        if self.connection_lost_since is None:
+            self.connection_lost_since = now
+            self.connection_note = f"lost at {datetime.now():%H:%M:%S}"
+            logger.warning("Lost the connection to the robot daemon")
+            return
+        recently_restarted = now - self._last_connection_restart < _CONNECTION_RESTART_COOLDOWN_S
+        if now - self.connection_lost_since >= _CONNECTION_LOST_RESTART_S and not recently_restarted:
+            self._last_connection_restart = now
+            logger.error("Robot connection down for %.0f s; restarting the app", now - self.connection_lost_since)
+            self.restart_app()
 
     def restart_app(self) -> str:
         """Ask the daemon to restart this app (rebuilds audio and motion from scratch)."""
@@ -475,6 +508,7 @@ class DroidRuntime:
             elif self.settings.auto_update and datetime.now().hour in _UPDATE_HOURS:
                 await asyncio.to_thread(self.check_for_update)
             return
+        await self._watch_connection()
         await self._watch_motors()
         idle_s = self.seconds_since_activity()
         dormant_after_s = self.settings.dormant_after_minutes * 60.0
