@@ -48,7 +48,6 @@ class Identity:
 
     droid_name: str = DEFAULT_DROID_NAME
     owner_name: str = DEFAULT_OWNER_NAME
-    wake_phrase: str = ""
     voice: str = ""
     humour: str = "dry"
     talkativeness: str = "brief"
@@ -90,7 +89,7 @@ def _string_list(value: object) -> list[str]:
 def _identity_from_mapping(raw: dict[str, Any]) -> Identity:
     """Build an identity from a hand-edited mapping, keeping defaults for missing or malformed fields."""
     identity = Identity()
-    for key in ("droid_name", "owner_name", "wake_phrase", "voice", "humour", "talkativeness", "language"):
+    for key in ("droid_name", "owner_name", "voice", "humour", "talkativeness", "language"):
         value = raw.get(key)
         if isinstance(value, str) and value.strip():
             setattr(identity, key, value.strip())

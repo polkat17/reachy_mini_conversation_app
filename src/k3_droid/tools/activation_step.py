@@ -19,15 +19,14 @@ class ActivationStep(Tool):
     name = "activation_step"
     description = (
         "Run your activation protocol. Actions: 'status' (current stage and what to do), 'save' (store the "
-        "answer for the current stage and move on), 'redo' (go back to a stage), 'check_wake_test' (listen for "
-        "the wake phrase being said), 'try_voice' (switch to a voice to demo it), 'commit' (finish activation)."
+        "answer for the current stage and move on), 'redo' (go back to a stage), 'try_voice' (switch to a voice to demo it), 'commit' (finish activation)."
     )
     parameters_schema = {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["status", "save", "redo", "check_wake_test", "try_voice", "commit"],
+                "enum": ["status", "save", "redo", "try_voice", "commit"],
             },
             "value": {
                 "type": "object",
@@ -73,14 +72,6 @@ class ActivationStep(Tool):
                 return self._stage_payload(droid)
             if action == "try_voice":
                 return {"status": await droid.change_voice(str(value.get("voice") or ""))}
-            if action == "check_wake_test":
-                if stage.id != "wake_phrase" or not droid.identity.wake_phrase:
-                    return {"error": "save a wake phrase first"}
-                heard = await droid.run_wake_test(droid.identity.wake_phrase)
-                if heard < 2:
-                    return {"passed": False, "heard": heard, "hint": "Suggest a clearer phrase and save it again."}
-                droid.activation.advance()
-                return {"passed": True, "heard": heard, **self._stage_payload(droid)}
             if action == "commit":
                 if stage.id != "commit":
                     return {"error": f"finish stage '{stage.id}' first"}
@@ -93,16 +84,6 @@ class ActivationStep(Tool):
                 await droid.run_boot_selftest()
             elif stage.id == "owner" and droid.presence is not None and not droid.face_registry.owner_enrolled():
                 return {"error": "enroll the owner's face first with enroll_face role 'owner'"}
-            elif stage.id == "wake_phrase":
-                apply_answer(stage.id, value, droid.identity)
-                unknown = droid.wake_spotter.unknown_words(droid.identity.wake_phrase)
-                if unknown:
-                    return {"error": f"I cannot recognise these words: {', '.join(unknown)}. Choose other words."}
-                droid.save_identity()
-                return {
-                    "status": "phrase saved",
-                    "next": "Ask your owner to say the phrase three times, then call activation_step 'check_wake_test'.",
-                }
             elif stage.id == "voice":
                 apply_answer(stage.id, value, droid.identity)
                 await droid.change_voice(droid.identity.voice)

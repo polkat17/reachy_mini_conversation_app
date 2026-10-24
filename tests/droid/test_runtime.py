@@ -110,8 +110,8 @@ async def test_tick_goes_dormant_after_inactivity(tmp_path, monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
-async def test_loud_speech_wakes_only_without_wake_phrase(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Before a wake phrase exists, sustained speech wakes a dormant droid."""
+async def test_loud_speech_wakes_only_a_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sustained speech wakes a dormant droid and is ignored while it is awake."""
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.request_wake = MagicMock()  # type: ignore[method-assign]
     runtime.stream.is_dormant = True  # type: ignore[union-attr]
@@ -120,7 +120,7 @@ async def test_loud_speech_wakes_only_without_wake_phrase(tmp_path, monkeypatch:
     runtime._wake_on_loud_speech(loud)
     runtime.request_wake.assert_called_once_with("speech")
 
-    runtime.identity.wake_phrase = "hey kay three"
+    runtime.stream.is_dormant = False  # type: ignore[union-attr]
     runtime._wake_on_loud_speech(loud)
     runtime.request_wake.assert_called_once()
 

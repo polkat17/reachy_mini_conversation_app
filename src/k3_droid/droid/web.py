@@ -25,7 +25,6 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "owner_name": identity.owner_name,
         "activated": identity.activated,
         "dormant": runtime.is_dormant,
-        "wake_phrase": identity.wake_phrase,
         "someone_present": runtime.someone_present(),
         "in_view": ", ".join(runtime.people_in_view()),
         "activation_stage": "" if identity.activated else runtime.activation.stage.id,

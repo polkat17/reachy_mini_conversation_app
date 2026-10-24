@@ -1,4 +1,4 @@
-"""Microphone helpers shared by the droid's listeners (wake trigger, wake phrase, sound classifier)."""
+"""Microphone helpers shared by the droid's listeners (wake trigger, sound classifier)."""
 
 import numpy as np
 from numpy.typing import NDArray
@@ -23,7 +23,7 @@ def to_mono_16k(sample_rate: int, frame: AudioArray) -> NDArray[np.float32]:
 
 
 class LoudnessTrigger:
-    """Fire once sound stays above ``threshold_rms`` for ``min_duration_s`` (the wake trigger before a wake phrase exists)."""
+    """Fire once sound stays above ``threshold_rms`` for ``min_duration_s`` (the speech wake trigger)."""
 
     def __init__(self, threshold_rms: float = 0.04, min_duration_s: float = 0.6) -> None:
         """Configure the trigger level and how long the sound must last."""

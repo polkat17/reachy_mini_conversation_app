@@ -36,7 +36,6 @@ def test_redo_and_unknown_stage(tmp_path: Path) -> None:
     ("stage", "value"),
     [
         ("designation", {"name": ""}),
-        ("wake_phrase", {"phrase": "kay"}),
         ("calibration", {"humour": "slapstick", "talkativeness": "brief", "language": "English"}),
         ("protocols", {"unprompted_remarks": "sometimes", "quiet_hours": "late"}),
         ("protocols", {"unprompted_remarks": "sometimes", "break_nudge_minutes": "lots"}),
@@ -53,7 +52,6 @@ def test_answers_fill_the_identity() -> None:
     """Valid answers land in the identity and show up in the summary."""
     identity = Identity()
     apply_answer("designation", {"name": "Bolt"}, identity)
-    apply_answer("wake_phrase", {"phrase": "Hey Bolt!"}, identity)
     apply_answer("calibration", {"humour": "Sarcastic", "talkativeness": "brief", "language": "English"}, identity)
     apply_answer("directives", {"interests": ["chess", " "], "avoid_topics": ["politics"]}, identity)
     apply_answer(
@@ -64,11 +62,18 @@ def test_answers_fill_the_identity() -> None:
     apply_answer("household", {"members": [{"name": "Miso", "kind": "cat"}], "guest_policy": "polite"}, identity)
     apply_answer("memory_consent", {"consent": True}, identity)
 
-    assert identity.droid_name == "Bolt" and identity.wake_phrase == "hey bolt"
+    assert identity.droid_name == "Bolt"
     assert identity.humour == "sarcastic" and identity.interests == ["chess"]
     assert identity.protocols.quiet_hours == "" and identity.protocols.break_nudge_minutes == 90
     assert identity.household[0].name == "Miso" and identity.memory_consent is True
     assert "Miso (cat)" in summarize(identity)
+
+
+def test_wake_phrase_stage_is_gone_and_saved_progress_moves_on(tmp_path: Path) -> None:
+    """Progress saved at the old wake phrase stage (index 3) resumes at the voice stage."""
+    assert "wake_phrase" not in STAGE_IDS
+    (tmp_path / "activation.json").write_text('{"stage_index": 3}', encoding="utf-8")
+    assert ActivationProgress(tmp_path).stage.id == "voice"
 
 
 def test_unactivated_droid_gets_activation_instructions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -103,7 +103,7 @@ Copy `.env.example` to `.env` when you want to point Hugging Face at your own lo
 
 | Variable | Description |
 |----------|-------------|
-| `REALTIME_TRANSCRIPTION_LANGUAGE` | Optional input transcription language for the realtime backend. Defaults to `ru` in this fork (the K3 droid speaks Russian); set to a backend-supported code such as `en` or `zh`. It also selects the wake phrase model (Russian or English). |
+| `REALTIME_TRANSCRIPTION_LANGUAGE` | Optional input transcription language for the realtime backend. Defaults to `ru` in this fork (the K3 droid speaks Russian); set to a backend-supported code such as `en` or `zh`. |
 | `HF_REALTIME_CONNECTION_MODE` | Hugging Face connection selector: `deployed` uses the built-in Hugging Face server; `local` uses `HF_REALTIME_WS_URL`. Defaults to `deployed`. |
 | `HF_REALTIME_WS_URL` | Direct websocket endpoint for your own Hugging Face backend. Accepts either a base URL like `ws://127.0.0.1:8765/v1` or the full websocket URL `ws://127.0.0.1:8765/v1/realtime`. Used when `HF_REALTIME_CONNECTION_MODE=local`. |
 | `HF_TOKEN` | Optional token for Hugging Face access. Local endpoints receive only this explicitly configured token. |
@@ -428,13 +428,13 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
   `beep`, the droid picks a fitting emotion itself.
 - **Always on**: the droid never stops itself. `go_to_sleep`, the web page and inactivity put it in *dormant*
   mode: sleep pose, realtime session closed, but the app keeps listening and watching so it can wake again.
-  Flicking an antenna wakes it, and before a wake phrase is set, any sustained speech does too. On start it registers itself as the robot's
+  Its owner's face, sustained speech, an antenna flick or a head scratch wakes it. On start it registers itself as the robot's
   startup app. The wireless robot boots asleep, so after power-on flick an antenna (or wake the robot from the
   dashboard) and the droid boots.
 - **Idle life**: while nobody is talking it glances around, beeps to itself and now and then makes a remark,
   silently during quiet hours.
 - **Activation**: on first power-on the droid runs an activation protocol: boot self-test, owner face
-  enrolment, its name, a wake phrase (tested three times), a voice, humour and talkativeness, interests and
+  enrolment, its name, a voice, humour and talkativeness, interests and
   topics to avoid, interaction rules (greetings, remarks, quiet hours, face following, break reminders), the
   household (people and pets), memory consent, and the upgrade briefing. Progress survives power cuts; say
   "redo" to repeat a stage. Answers go into `core.yaml`.
@@ -442,8 +442,6 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
   (only embeddings are stored, in `<instance>/droid/faces.json`). It wakes when it sees its owner, welcomes
   them back after long absences, says goodbye, suggests breaks after long desk sessions, and greets strangers
   politely without sharing the owner's memories. Recognition is for convenience, not security.
-- **Wake phrase**: spotted offline by Vosk with a grammar limited to the chosen phrase. The small English model
-  (about 40 MB) downloads on first use into `<instance>/droid/models/`.
 - **Memory**: facts, session summaries, reminders and a nightly diary live in `<instance>/droid/memory.db`
   (text only). Each session starts with the droid's mood, upcoming reminders, the last three sessions and the
   key facts (about 1,500 tokens); everything else is reached through `recall`. When the droid goes dormant (or

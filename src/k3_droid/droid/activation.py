@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 from k3_droid.droid.identity import Identity, HouseholdMember
 from k3_droid.droid.idle_life import parse_quiet_hours
-from k3_droid.droid.wake_phrase import validate_phrase, normalize_phrase
 
 
 logger = logging.getLogger(__name__)
@@ -45,32 +44,25 @@ STAGES: tuple[Stage, ...] = (
         "name. Spell back the chosen name, then save value {{'name': ...}}.",
     ),
     Stage(
-        "wake_phrase",
-        "Stage 3, wake phrase. Ask your owner to choose the phrase that wakes you from dormant mode: two to four "
-        "ordinary words, for example 'hey' plus your name, with letters and digits spelled as spoken ('kay three'). "
-        "Save value {{'phrase': ...}}. Then ask them to say it three times and call activation_step "
-        "'check_wake_test'. If the test fails, suggest a clearer phrase and repeat.",
-    ),
-    Stage(
         "voice",
-        "Stage 4, vocal module. Offer two or three of these voices: {voices}. For each, call activation_step "
+        "Stage 3, vocal module. Offer two or three of these voices: {voices}. For each, call activation_step "
         "'try_voice' with value {{'voice': ...}} and speak one short sample line. Then save value {{'voice': ...}}.",
     ),
     Stage(
         "calibration",
-        "Stage 5, personality calibration. Ask for humour (dry, sarcastic, minimal or warm), talkativeness "
+        "Stage 4, personality calibration. Ask for humour (dry, sarcastic, minimal or warm), talkativeness "
         "(brief or chatty) and language. Say one sample line in the chosen style, confirm, then save value "
         "{{'humour': ..., 'talkativeness': ..., 'language': ...}}.",
     ),
     Stage(
         "directives",
-        "Stage 6, primary directives. Ask what {owner} is interested in, which topics to follow (teams, games, "
+        "Stage 5, primary directives. Ask what {owner} is interested in, which topics to follow (teams, games, "
         "news), and anything you must never bring up. Read the lists back, then save value "
         "{{'interests': [...], 'avoid_topics': [...]}}.",
     ),
     Stage(
         "protocols",
-        "Stage 7, interaction protocols. Ask: greet them when you see them? how often to speak up unprompted "
+        "Stage 6, interaction protocols. Ask: greet them when you see them? how often to speak up unprompted "
         "(never, rarely, sometimes, often)? quiet hours (like 23:00-07:00, or none)? follow their face? break "
         "reminders after how many minutes at the desk (0 for never)? Read back, then save value "
         "{{'greet_on_sight': bool, 'unprompted_remarks': ..., 'quiet_hours': ..., 'follow_face': bool, "
@@ -78,25 +70,25 @@ STAGES: tuple[Stage, ...] = (
     ),
     Stage(
         "household",
-        "Stage 8, household registry. Ask about other people and pets in the home (names, what they are, a short "
+        "Stage 7, household registry. Ask about other people and pets in the home (names, what they are, a short "
         "note) and how to treat guests. Save value {{'members': [{{'name': ..., 'kind': 'person'|'cat'|'dog'|..., "
         "'notes': ...}}], 'guest_policy': ...}}.",
     ),
     Stage(
         "memory_consent",
-        "Stage 9, memory consent. Explain: you keep short text notes about conversations and facts, never "
+        "Stage 8, memory consent. Explain: you keep short text notes about conversations and facts, never "
         "recordings or images, stored only on this robot, and {owner} can say 'forget' at any time. Ask for "
         "consent and save value {{'consent': true or false}}.",
     ),
     Stage(
         "upgrade_briefing",
-        "Stage 10, upgrade protocol. Explain: when you cannot do something, you can file an upgrade request; a "
+        "Stage 9, upgrade protocol. Explain: when you cannot do something, you can file an upgrade request; a "
         "coding assistant prepares the change and {owner} approves every upgrade on their phone before you "
         "install it while dormant. Then save.",
     ),
     Stage(
         "commit",
-        "Stage 11, commit. Read the profile summary back briefly, ask for final confirmation, then call "
+        "Stage 10, commit. Read the profile summary back briefly, ask for final confirmation, then call "
         "activation_step 'commit'. Afterwards greet {owner} as a fully activated droid.",
     ),
 )
@@ -132,12 +124,6 @@ def apply_answer(stage_id: str, value: dict[str, Any], identity: Identity) -> No
     """Validate a stage answer and write it into ``identity``; raises ``ActivationError`` when invalid."""
     if stage_id == "designation":
         identity.droid_name = _require_str(value, "name", 24)
-    elif stage_id == "wake_phrase":
-        phrase = _require_str(value, "phrase")
-        problem = validate_phrase(phrase, identity.droid_name)
-        if problem:
-            raise ActivationError(problem)
-        identity.wake_phrase = normalize_phrase(phrase)
     elif stage_id == "voice":
         identity.voice = _require_str(value, "voice", 40)
     elif stage_id == "calibration":
@@ -189,7 +175,7 @@ def summarize(identity: Identity) -> str:
     protocols = identity.protocols
     household = ", ".join(f"{member.name} ({member.kind})" for member in identity.household) or "none"
     return (
-        f"Designation {identity.droid_name}; owner {identity.owner_name}; wake phrase '{identity.wake_phrase}'; "
+        f"Designation {identity.droid_name}; owner {identity.owner_name}; "
         f"voice {identity.voice or 'default'}; humour {identity.humour}, {identity.talkativeness}, "
         f"{identity.language}; interests {', '.join(identity.interests) or 'none'}; avoid "
         f"{', '.join(identity.avoid_topics) or 'nothing'}; greet on sight {protocols.greet_on_sight}; remarks "

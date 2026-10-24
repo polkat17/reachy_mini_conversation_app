@@ -12,7 +12,7 @@ changes to the conversation app still merge cleanly. Upstream files get small, c
 | Voice AI | Hugging Face realtime backend (the only backend in this fork). |
 | Owner | Pasha, preset. The droid still asks for its own name during activation. |
 | Strangers | Talks freely, but never shares Pasha's memories. |
-| Wake-up | Seeing Pasha's face, hearing its wake phrase (chosen during activation), flicking an antenna, or the web UI button. |
+| Wake-up | Seeing Pasha's face, sustained speech, flicking an antenna, scratching its head, or the web UI button. The wake phrase was dropped. |
 | Autostart | The daemon's built-in startup-app setting (`PUT /api/apps/startup-app`). No SSH needed. |
 | Self-upgrades | The droid files a GitHub issue; a scheduled Claude Code session opens a PR; Pasha merges; the robot installs `main` while dormant and rolls back if the new version fails its health check. |
 | Settings | `.env` (documented in `.env.example`). |
@@ -25,7 +25,7 @@ need a first run on the robot.
 
 1. **Persona and emotes**: `droid` profile, droid emotion names, an emote on every reply, beep language.
 2. **Always on**: dormant/wake instead of exiting, autostart, idle life, phone notifications (ntfy).
-3. **Activation and presence**: first-boot activation protocol, face enrolment and recognition, wake phrase,
+3. **Activation and presence**: first-boot activation protocol, face enrolment and recognition,
    guest registry, welcome home / goodbye, break nudges.
 4. **Memory**: SQLite memory with semantic recall, confirmed forget, episodes, droid diary, moods over days,
    morning briefing, reminders and timers.
@@ -41,15 +41,14 @@ Runs on the first power-on, resumes if interrupted, and every stage can be redon
 0. Boot self-test (head scan, antenna twitch, beeps).
 1. Owner registration: Pasha faces the camera; the droid enrols his face and confirms it recognises him.
 2. Designation: keep `K3-L0` or assign a new name.
-3. Wake phrase: 2 to 4 words, distinct from the name; tested three times before it is accepted.
-4. Vocal module: pick from spoken voice samples.
-5. Personality calibration: humour, talkativeness, language.
-6. Primary directives: interests, topics to follow, topics to avoid.
-7. Interaction protocols: greetings, unprompted remarks, quiet hours, face following.
-8. Household registry: people and pets (including the cat), and how to treat guests.
-9. Memory consent.
-10. Upgrade protocol briefing.
-11. Commit: the droid reads the profile back and saves it after confirmation.
+3. Vocal module: pick from spoken voice samples.
+4. Personality calibration: humour, talkativeness, language.
+5. Primary directives: interests, topics to follow, topics to avoid.
+6. Interaction protocols: greetings, unprompted remarks, quiet hours, face following.
+7. Household registry: people and pets (including the cat), and how to treat guests.
+8. Memory consent.
+9. Upgrade protocol briefing.
+10. Commit: the droid reads the profile back and saves it after confirmation.
 
 ## Setup
 
@@ -91,7 +90,6 @@ These parts depend on real hardware or services and could only be tested with mo
 - [ ] Dormant and wake: sleep pose, session closes, wake-up move, and the movement loop restarting smoothly.
 - [ ] Autostart: the app is listed as the daemon's startup app, and flicking an antenna after power-on boots it.
 - [ ] Face enrolment and recognition in your room's lighting (threshold `MATCH_THRESHOLD` in `droid/faces.py`).
-- [ ] Wake phrase through the robot's microphone (verified here only on synthesised speech).
 - [ ] Loudness wake threshold (`LoudnessTrigger` in `droid/audio.py`) in your room.
 - [ ] Music and meow detection through the robot's microphone; cat detection through its camera.
 - [ ] Voice filter taste (parameters in `droid/voice_fx.py`).

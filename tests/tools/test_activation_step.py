@@ -19,7 +19,6 @@ def deps(tmp_path: Path) -> ToolDependencies:
     droid = DroidRuntime(deps, tmp_path)
     droid.run_boot_selftest = AsyncMock()  # type: ignore[method-assign]
     droid.change_voice = AsyncMock(return_value="Voice changed to Ryan.")  # type: ignore[method-assign]
-    droid.run_wake_test = AsyncMock(return_value=3)  # type: ignore[method-assign]
     droid.handler = MagicMock(refresh_instructions=AsyncMock())
     deps.droid = droid
     return deps
@@ -39,9 +38,7 @@ async def test_full_activation_walkthrough(deps: ToolDependencies, tmp_path: Pat
 
     droid.face_registry.enroll("Pasha", [np.ones(128, dtype=np.float32) / np.sqrt(128)], is_owner=True)
     assert (await step(deps, action="save"))["stage"] == "designation"
-    assert (await step(deps, action="save", value={"name": "Bolt"}))["stage"] == "wake_phrase"
-    assert (await step(deps, action="save", value={"phrase": "hey bolt"}))["status"] == "phrase saved"
-    assert (await step(deps, action="check_wake_test"))["passed"] is True
+    assert (await step(deps, action="save", value={"name": "Bolt"}))["stage"] == "voice"
     await step(deps, action="try_voice", value={"voice": "Ryan"})
     assert (await step(deps, action="save", value={"voice": "Ryan"}))["stage"] == "calibration"
     await step(deps, action="save", value={"humour": "dry", "talkativeness": "brief", "language": "English"})
@@ -55,24 +52,10 @@ async def test_full_activation_walkthrough(deps: ToolDependencies, tmp_path: Pat
     assert (await step(deps, action="commit"))["status"] == "activated"
 
     identity = load_identity(tmp_path)
-    assert identity.activated and identity.droid_name == "Bolt" and identity.wake_phrase == "hey bolt"
+    assert identity.activated and identity.droid_name == "Bolt"
     assert identity.household[0].name == "Miso"
     droid.handler.refresh_instructions.assert_awaited_once()
     assert "already complete" in (await step(deps, action="save"))["error"]
-
-
-@pytest.mark.asyncio
-async def test_failed_wake_test_stays_on_stage(deps: ToolDependencies) -> None:
-    """A wake phrase heard fewer than twice keeps the droid on the wake phrase stage."""
-    droid = deps.droid
-    assert droid is not None
-    droid.activation.go_to("wake_phrase")
-    droid.run_wake_test = AsyncMock(return_value=1)  # type: ignore[method-assign]
-    await ActivationStep()(deps, action="save", value={"phrase": "hey bolt"})
-
-    result = await ActivationStep()(deps, action="check_wake_test")
-
-    assert result["passed"] is False and droid.activation.stage.id == "wake_phrase"
 
 
 @pytest.mark.asyncio

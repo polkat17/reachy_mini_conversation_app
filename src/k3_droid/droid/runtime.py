@@ -51,7 +51,6 @@ from k3_droid.droid.activation import ActivationProgress
 from k3_droid.droid.day_review import briefing_line, fetch_day_review
 from k3_droid.tools.core_tools import ToolDependencies
 from k3_droid.tools.stop_dance import StopDance
-from k3_droid.droid.wake_phrase import WakePhraseSpotter
 from k3_droid.droid.head_scratch import HeadScratchDetector
 from k3_droid.tools.play_emotion import PlayEmotion
 from k3_droid.dance_emotion_moves import GotoQueueMove
@@ -95,10 +94,7 @@ class DroidRuntime:
         self._day_review_checked_at: float | None = None
         self.day_review_note = "not checked yet"
         self.presence: PresenceSensor | None = None
-        self.wake_spotter = WakePhraseSpotter(self.data_dir / "models")
         self.activation = ActivationProgress(self.data_dir)
-        self._wake_test_active = False
-        self._wake_test_hits = 0
         self._last_break_nudge_at = time.monotonic()
         self._antenna_detector = AntennaFlickDetector()
         self._scratch_detector = HeadScratchDetector()
@@ -129,7 +125,6 @@ class DroidRuntime:
         self._audio_queue: queue.Queue[NDArray[np.float32]] = queue.Queue(maxsize=_AUDIO_QUEUE_FRAMES)
         self._audio_listeners: list[AudioListener] = [
             self._wake_on_loud_speech,
-            self._listen_for_wake_phrase,
             self._listen_for_sounds,
         ]
         self._event_listeners: list[Callable[[ConversationEvent], None]] = [
@@ -159,8 +154,6 @@ class DroidRuntime:
         """Start background work: autostart registration, audio listeners, and the tick loop."""
         threading.Thread(target=self._register_app, daemon=True, name="droid-autostart").start()
         threading.Thread(target=self._audio_worker, daemon=True, name="droid-audio").start()
-        if self.identity.wake_phrase:
-            self.wake_spotter.set_phrase(self.identity.wake_phrase)
         if self.deps.camera_enabled:
             self.presence = PresenceSensor(
                 self.deps.reachy_mini.media.get_frame,
@@ -357,8 +350,8 @@ class DroidRuntime:
                     logger.warning("Droid audio listener failed: %s", e)
 
     def _wake_on_loud_speech(self, samples: NDArray[np.float32]) -> None:
-        # Until a wake phrase is chosen during activation, any sustained speech wakes the droid.
-        if not self.is_dormant or self.identity.wake_phrase:
+        # Sustained speech wakes a dormant droid (as do its face, an antenna flick, a head scratch and the web button).
+        if not self.is_dormant:
             self._loudness_trigger.reset()
             return
         if self._loudness_trigger.feed(samples):
@@ -496,34 +489,6 @@ class DroidRuntime:
             await asyncio.sleep(1.0)
         await self._emotion_tool(self.deps, emotion="curious")
 
-    def _listen_for_wake_phrase(self, samples: NDArray[np.float32]) -> None:
-        # Spotting only runs while dormant or during the activation test, to save CPU.
-        if not (self.is_dormant or self._wake_test_active):
-            return
-        if not self.wake_spotter.feed(samples):
-            return
-        if self._wake_test_active:
-            self._wake_test_hits += 1
-            logger.info("Wake phrase test: heard %d time(s)", self._wake_test_hits)
-        else:
-            self.request_wake("wake_phrase")
-
-    async def run_wake_test(self, phrase: str, needed: int = 2, timeout_s: float = 20.0) -> int:
-        """Listen for ``phrase`` for up to ``timeout_s``; returns how many times it was heard."""
-        self.wake_spotter.set_phrase(phrase)
-        deadline = time.monotonic() + 60.0
-        while not self.wake_spotter.ready and time.monotonic() < deadline:
-            await asyncio.sleep(0.5)
-        self._wake_test_hits = 0
-        self._wake_test_active = True
-        try:
-            deadline = time.monotonic() + timeout_s
-            while self._wake_test_hits < needed and time.monotonic() < deadline:
-                await asyncio.sleep(0.2)
-        finally:
-            self._wake_test_active = False
-        return self._wake_test_hits
-
     async def change_voice(self, voice: str) -> str:
         """Switch the live voice and remember it for future sessions."""
         if self.stream is None:
@@ -534,7 +499,6 @@ class DroidRuntime:
         """Mark the droid activated and push the full identity to the live session."""
         self.identity.activated = True
         self.save_identity()
-        self.wake_spotter.set_phrase(self.identity.wake_phrase)
         if self.handler is not None:
             await self.handler.refresh_instructions()
 
@@ -547,7 +511,6 @@ class DroidRuntime:
         self.journal.take()
         self.identity = Identity()
         self.save_identity()
-        self.wake_spotter.set_phrase("")
         if self.stream is not None:
             await self.stream.request_backend_restart("droid factory reset")
 
