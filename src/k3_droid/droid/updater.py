@@ -93,6 +93,21 @@ def latest_revision(space: str, token: str | None) -> str | None:
         return None
 
 
+def installed_revision(app_name: str, space: str) -> str | None:
+    """Return the Space revision this app was installed from, as pip recorded it, or None when unknown."""
+    try:
+        from reachy_mini.apps.sources.app_update_checker import get_hf_install_info
+
+        # Inside the app the current environment is the apps venv, so the default flags look in the right place.
+        info = get_hf_install_info(app_name)
+    except Exception as e:
+        logger.warning("Could not read how %s was installed: %s", app_name, e)
+        return None
+    if info is None or str(info.space_id).lower() != space.lower():
+        return None
+    return str(info.installed_sha)
+
+
 def change_titles(space: str, token: str | None, since_revision: str, limit: int = 5) -> list[str]:
     """Return commit titles newer than ``since_revision``, newest first."""
     try:

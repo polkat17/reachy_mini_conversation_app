@@ -311,6 +311,7 @@ def test_update_check_launches_helper_for_new_revision(tmp_path, monkeypatch: py
     runtime.deps.reachy_mini.client.host, runtime.deps.reachy_mini.client.port = "localhost", 8000
     save_update_state(runtime.data_dir, UpdateState(installed_revision="old-sha"))
     monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "new-sha")
+    monkeypatch.setattr(runtime_mod, "installed_revision", lambda *_args: None)
     launch = MagicMock()
     monkeypatch.setattr(runtime_mod, "launch_update_helper", launch)
 
@@ -322,15 +323,53 @@ def test_update_check_launches_helper_for_new_revision(tmp_path, monkeypatch: py
     assert runtime.check_for_update() == "Checked recently."
 
 
-def test_update_check_first_run_records_revision(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """With no recorded revision, the first check adopts the Space's current one instead of reinstalling."""
+def test_update_check_trusts_the_installed_snapshot_over_stale_state(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A daemon reinstall leaves the saved revision stale; pip's record decides what is installed."""
     runtime = _runtime(tmp_path, monkeypatch)
     runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
     runtime.app_name = "droid_app"
+    runtime.deps.reachy_mini.client.host, runtime.deps.reachy_mini.client.port = "localhost", 8000
+    save_update_state(runtime.data_dir, UpdateState(installed_revision="sha-3"))  # recorded but never installed
+    monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "sha-3")
+    monkeypatch.setattr(runtime_mod, "installed_revision", lambda *_args: "sha-1")
+    launch = MagicMock()
+    monkeypatch.setattr(runtime_mod, "launch_update_helper", launch)
+
+    assert runtime.check_for_update(force=True).startswith("Installing")
+    assert launch.call_args.args[0]["previous"] == "sha-1"
+
+
+def test_update_check_installs_when_the_installed_revision_is_unknown(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no record at all, the button installs the latest instead of assuming it is already there."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
+    runtime.app_name = "droid_app"
+    runtime.deps.reachy_mini.client.host, runtime.deps.reachy_mini.client.port = "localhost", 8000
     monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "sha-1")
+    monkeypatch.setattr(runtime_mod, "installed_revision", lambda *_args: None)
+    launch = MagicMock()
+    monkeypatch.setattr(runtime_mod, "launch_update_helper", launch)
+
+    assert runtime.check_for_update(force=True).startswith("Installing")
+    assert launch.call_args.args[0]["revision"] == "sha-1"
+
+
+def test_update_check_reports_up_to_date_from_the_installed_snapshot(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When pip's record matches the Space, nothing is installed."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
+    runtime.app_name = "droid_app"
+    monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "sha-2")
+    monkeypatch.setattr(runtime_mod, "installed_revision", lambda *_args: "sha-2")
 
     assert runtime.check_for_update(force=True) == "Already up to date."
-    assert load_update_state(runtime.data_dir).installed_revision == "sha-1"
+    assert load_update_state(runtime.data_dir).installed_revision == "sha-2"
 
 
 @pytest.mark.asyncio

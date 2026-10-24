@@ -129,3 +129,17 @@ def test_stale_beacon_from_old_version_does_not_count(tmp_path: Path, fast_helpe
 
     assert helper_mod.run_update(_args(tmp_path), daemon) is False  # type: ignore[arg-type]
     assert fast_helper == ["new-sha", "old-sha"]
+
+
+def test_installed_revision_reads_pips_record_for_the_right_space(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The installed snapshot counts only when it came from the update Space."""
+    from reachy_mini.apps.sources import app_update_checker
+    from k3_droid.droid.updater import installed_revision
+
+    info = app_update_checker.HfInstallInfo(space_id="Polkat/k3-droid", installed_sha="a" * 40)
+    monkeypatch.setattr(app_update_checker, "get_hf_install_info", lambda app_name: info)
+    assert installed_revision("k3_droid", "polkat/K3-droid") == "a" * 40
+    assert installed_revision("k3_droid", "someone/else") is None
+
+    monkeypatch.setattr(app_update_checker, "get_hf_install_info", lambda app_name: None)
+    assert installed_revision("k3_droid", "Polkat/k3-droid") is None

@@ -35,6 +35,7 @@ from k3_droid.droid.updater import (
     latest_revision,
     load_update_state,
     save_update_state,
+    installed_revision,
     write_health_beacon,
     launch_update_helper,
     take_boot_dormant_flag,
@@ -767,18 +768,19 @@ class DroidRuntime:
         if latest is None:
             save_update_state(self.data_dir, state)
             return "Could not reach the update Space."
-        if not state.installed_revision:
-            # First run: assume the installed code is the Space's current revision.
-            state.installed_revision = latest
+        # Trust pip's record of the installed snapshot: the saved state goes stale when the app is (re)installed
+        # through the daemon. With neither, install the latest rather than assume it is already here.
+        installed = installed_revision(self.app_name, space) or state.installed_revision
+        state.installed_revision = installed
         save_update_state(self.data_dir, state)
-        if latest == state.installed_revision:
+        if installed and latest == installed:
             return "Already up to date."
         client = self.deps.reachy_mini.client
         launch_update_helper(
             {
                 "space": space,
                 "revision": latest,
-                "previous": state.installed_revision,
+                "previous": installed,
                 "app": self.app_name,
                 "daemon_url": f"http://{client.host}:{client.port}",
                 "data_dir": self.data_dir,
