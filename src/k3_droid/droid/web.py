@@ -42,6 +42,11 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "movement": "running" if runtime.deps.movement_manager.is_running() else "stopped (asleep)",
         "motors": _motors_line(runtime),
         "speaker": _speaker_line(runtime),
+        "motor_watchdog": (
+            f"{runtime.motor_restores} automatic restore(s); last: {runtime.motor_restore_note}"
+            if runtime.motor_restores
+            else "no restores needed"
+        ),
         "movement_error": runtime.deps.movement_manager.last_command_error or "none",
         "base": _base_line(runtime),
     }

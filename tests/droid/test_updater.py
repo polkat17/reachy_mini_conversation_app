@@ -49,8 +49,9 @@ class _FakeDaemon:
             write_health_beacon(self.data_dir)
 
 
-def _args(tmp_path: Path) -> argparse.Namespace:
+def _args(tmp_path: Path, boot_dormant: str = "1") -> argparse.Namespace:
     return argparse.Namespace(
+        boot_dormant=boot_dormant,
         space="owner/droid",
         revision="new-sha",
         previous="old-sha",
@@ -83,6 +84,15 @@ def test_healthy_update_is_kept(tmp_path: Path, fast_helper: list[str]) -> None:
     assert fast_helper == ["new-sha"] and state.installed_revision == "new-sha"
     assert state.previous_revision == "old-sha" and state.announce == ["Add train announcements"]
     assert (tmp_path / updater_mod.BOOT_DORMANT_FILENAME).exists()
+
+
+def test_update_the_owner_asked_for_restarts_awake(tmp_path: Path, fast_helper: list[str]) -> None:
+    """An update started while awake (the control page button) does not send the droid back to sleep."""
+    daemon = _FakeDaemon(tmp_path, {"new-sha"}, fast_helper)
+
+    assert helper_mod.run_update(_args(tmp_path, boot_dormant="0"), daemon) is True  # type: ignore[arg-type]
+
+    assert not (tmp_path / updater_mod.BOOT_DORMANT_FILENAME).exists()
 
 
 def test_unhealthy_update_rolls_back(tmp_path: Path, fast_helper: list[str]) -> None:

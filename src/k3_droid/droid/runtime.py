@@ -24,7 +24,7 @@ from k3_droid.tools.dance import Dance
 from k3_droid.droid.emotes import EmoteGuard
 from k3_droid.droid.notify import send_notification
 from k3_droid.droid.senses import SoundEvent, SoundWatcher, SoundClassifier
-from k3_droid.app_lifecycle import power_up_quietly
+from k3_droid.app_lifecycle import power_up_quietly, robot_motor_state
 from k3_droid.droid.antenna import AntennaFlickDetector
 from k3_droid.droid.context import OWNER_LAST_SEEN_KEY, mood_for, open_memory
 from k3_droid.droid.journal import (
@@ -80,6 +80,7 @@ _TALKING_RECENTLY_S = 10.0
 _UPDATE_CHECK_INTERVAL_S = 20 * 3600.0
 _UPDATE_HOURS = range(2, 6)
 _DAY_REVIEW_RECHECK_S = 600.0
+_MOTOR_CHECK_INTERVAL_S = 5.0
 
 
 def event_reply_rule(language: str) -> str:
@@ -127,6 +128,9 @@ class DroidRuntime:
         self._tasks: set[asyncio.Task[Any]] = set()
         self._stop = threading.Event()
         self._transition_lock = asyncio.Lock()
+        self._last_motor_check = 0.0
+        self.motor_restores = 0
+        self.motor_restore_note = ""
         self._emotion_tool = PlayEmotion()
         self._beep_tool = Beep()
         self._move_head_tool = MoveHead()
@@ -341,6 +345,25 @@ class DroidRuntime:
             logger.error("Failed to run the wake-up movement: %s", e)
         self.deps.movement_manager.start()
 
+    async def _watch_motors(self) -> None:
+        """While awake, switch the motors back on if something left them off (the body would sit limp, head down)."""
+        now = time.monotonic()
+        if now - self._last_motor_check < _MOTOR_CHECK_INTERVAL_S:
+            return
+        self._last_motor_check = now
+        if self._transition_lock.locked() or not self.deps.movement_manager.is_running():
+            return  # falling asleep or waking up on purpose
+        robot = self.deps.reachy_mini
+        mode, busy = await asyncio.to_thread(robot_motor_state, robot)
+        if mode is None or mode == "enabled" or busy:
+            return
+        logger.warning("Motors are %s while the droid is awake; switching them back on", mode)
+        restored = await asyncio.to_thread(power_up_quietly, robot, logger)
+        self.motor_restores += 1
+        self.motor_restore_note = f"{datetime.now():%H:%M:%S} motors were {mode}; " + (
+            "switched back on" if restored else "could not switch them on"
+        )
+
     def restore_motors(self) -> str:
         """Clear a stuck daemon move, turn the motors on, wake the body and restart the control loop."""
         if self.is_dormant:
@@ -452,6 +475,7 @@ class DroidRuntime:
             elif self.settings.auto_update and datetime.now().hour in _UPDATE_HOURS:
                 await asyncio.to_thread(self.check_for_update)
             return
+        await self._watch_motors()
         idle_s = self.seconds_since_activity()
         dormant_after_s = self.settings.dormant_after_minutes * 60.0
         if dormant_after_s > 0 and self.seconds_since_user_turn() >= dormant_after_s and not self.someone_present():
@@ -825,6 +849,7 @@ class DroidRuntime:
                 "hf_token": config.HF_TOKEN or "",
                 "ntfy_server": self.settings.ntfy_server,
                 "ntfy_topic": self.settings.ntfy_topic,
+                "boot_dormant": "1" if self.is_dormant else "0",
             }
         )
         return f"Installing {latest[:8]}; the droid restarts in a moment."

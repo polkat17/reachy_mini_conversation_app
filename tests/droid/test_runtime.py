@@ -320,6 +320,7 @@ def test_update_check_launches_helper_for_new_revision(tmp_path, monkeypatch: py
     args = launch.call_args.args[0]
     assert result.startswith("Installing") and args["revision"] == "new-sha" and args["previous"] == "old-sha"
     assert args["daemon_url"] == "http://localhost:8000"
+    assert args["boot_dormant"] == "0"  # asked for while awake: restart awake
     assert runtime.check_for_update() == "Checked recently."
 
 
@@ -564,3 +565,34 @@ def test_control_page_reports_and_sets_the_speaker_volume(tmp_path, monkeypatch:
     assert client.post("/droid/api/volume/70").json() == {"status": "Speaker volume set to 70%."}
     assert ("POST", "/api/volume/set", {"volume": 70}) in calls
     assert client.post("/droid/api/volume/150").status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_motor_watchdog_switches_limp_motors_back_on_while_awake(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Awake with the motors off, the watchdog powers them up quietly; asleep or enabled it leaves them alone."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.deps.movement_manager.is_running.return_value = True
+    state = {"mode": "disabled"}
+    monkeypatch.setattr(runtime_mod, "robot_motor_state", lambda robot: (state["mode"], False))
+    power_up = MagicMock(return_value=True)
+    monkeypatch.setattr(runtime_mod, "power_up_quietly", power_up)
+
+    await runtime._watch_motors()
+    assert power_up.call_count == 1 and runtime.motor_restores == 1
+    assert "motors were disabled; switched back on" in runtime.motor_restore_note
+
+    await runtime._watch_motors()  # within the check interval: nothing new
+    assert power_up.call_count == 1
+
+    runtime._last_motor_check = 0.0
+    state["mode"] = "enabled"
+    await runtime._watch_motors()
+    assert power_up.call_count == 1
+
+    runtime._last_motor_check = 0.0
+    state["mode"] = "disabled"
+    runtime.deps.movement_manager.is_running.return_value = False  # asleep on purpose
+    await runtime._watch_motors()
+    assert power_up.call_count == 1

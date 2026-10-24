@@ -90,7 +90,8 @@ def run_update(args: argparse.Namespace, daemon: Daemon) -> bool:
     token = args.hf_token or None
 
     def restart_and_check() -> bool:
-        (data_dir / BOOT_DORMANT_FILENAME).touch()
+        if args.boot_dormant == "1":  # nightly updates return to sleep; an update the owner asked for stays awake
+            (data_dir / BOOT_DORMANT_FILENAME).touch()
         # Remove the old beacon so any beacon that appears comes from the version just started.
         (data_dir / HEALTH_FILENAME).unlink(missing_ok=True)
         daemon.start(args.app)
@@ -142,6 +143,7 @@ def main() -> None:
     parser.add_argument("--hf-token", default="")
     parser.add_argument("--ntfy-server", default="https://ntfy.sh")
     parser.add_argument("--ntfy-topic", default="")
+    parser.add_argument("--boot-dormant", default="1")
     args = parser.parse_args()
     Path(args.data_dir).mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
