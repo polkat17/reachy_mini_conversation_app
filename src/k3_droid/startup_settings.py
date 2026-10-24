@@ -11,6 +11,7 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 STARTUP_SETTINGS_FILENAME = "startup_settings.json"
+FIRST_RUN_PROFILE = "droid"  # used until a personality is saved from the UI
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,9 @@ def load_startup_settings_into_runtime(instance_path: str | Path | None) -> Star
     if settings_path is None or not settings_path.exists():
         if os.getenv("REACHY_MINI_CUSTOM_PROFILE"):
             return StartupSettings(voice=settings.voice)
+        # Nothing chosen yet: this app is the K3 droid, so a fresh install boots as the droid.
+        set_custom_profile(FIRST_RUN_PROFILE)
+        return StartupSettings(profile=FIRST_RUN_PROFILE, voice=settings.voice)
 
     set_custom_profile(settings.profile)
     return settings

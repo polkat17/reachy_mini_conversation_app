@@ -52,6 +52,7 @@ from k3_droid.droid.day_review import briefing_line, fetch_day_review
 from k3_droid.tools.core_tools import ToolDependencies
 from k3_droid.tools.stop_dance import StopDance
 from k3_droid.droid.wake_phrase import WakePhraseSpotter
+from k3_droid.droid.head_scratch import HeadScratchDetector
 from k3_droid.tools.play_emotion import PlayEmotion
 from k3_droid.dance_emotion_moves import GotoQueueMove
 from k3_droid.conversation_handler import ConversationEvent, ConversationHandler
@@ -99,6 +100,7 @@ class DroidRuntime:
         self._wake_test_hits = 0
         self._last_break_nudge_at = time.monotonic()
         self._antenna_detector = AntennaFlickDetector()
+        self._scratch_detector = HeadScratchDetector()
         self.memory = open_memory(instance_path)
         self._sound_watcher: SoundWatcher | None = None
         self._sound_loading = False
@@ -167,8 +169,8 @@ class DroidRuntime:
                 watch_cats=self.settings.watch_cats,
             )
             self.presence.start()
-        if self.settings.antenna_wake:
-            threading.Thread(target=self._watch_antennas, daemon=True, name="droid-antennas").start()
+        if self.settings.antenna_wake or self.settings.head_scratch_wake:
+            threading.Thread(target=self._watch_touch, daemon=True, name="droid-touch").start()
         threading.Thread(target=self._start_tick_loop_when_ready, daemon=True, name="droid-tick-start").start()
 
     def stop(self) -> None:
@@ -834,22 +836,49 @@ class DroidRuntime:
         base = self.settings.presence_interval_s
         return base * 1.5 if self.is_dormant or self.someone_present() else base
 
-    def _watch_antennas(self) -> None:
+    def _watch_touch(self) -> None:
+        """While dormant, wake on an antenna flick or a head scratch (each can be switched off)."""
         robot = self.deps.reachy_mini
         dormant_since: float | None = None
+        imu_missing_logged = False
         while not self._stop.wait(_ANTENNA_POLL_S):
             if not self.is_dormant:
                 dormant_since = None
                 self._antenna_detector.reset()
+                self._scratch_detector.reset()
                 continue
             dormant_since = dormant_since or time.monotonic()
             if time.monotonic() - dormant_since < _ANTENNA_SETTLE_S:
                 continue
-            try:
-                _, antennas = robot.get_current_joint_positions()
-            except Exception as e:
-                logger.debug("Could not read the antennas: %s", e)
-                continue
-            if antennas is not None and self._antenna_detector.update((float(antennas[0]), float(antennas[1]))):
-                logger.info("Antenna flicked; waking up")
-                self.request_wake("antenna")
+            if self.settings.antenna_wake:
+                try:
+                    _, antennas = robot.get_current_joint_positions()
+                except Exception as e:
+                    logger.debug("Could not read the antennas: %s", e)
+                    antennas = None
+                if antennas is not None and self._antenna_detector.update((float(antennas[0]), float(antennas[1]))):
+                    logger.info("Antenna flicked; waking up")
+                    self.request_wake("antenna")
+                    continue
+            if self.settings.head_scratch_wake:
+                try:
+                    imu = robot.imu
+                except Exception as e:
+                    logger.debug("Could not read the IMU: %s", e)
+                    continue
+                if imu is None:
+                    if not imu_missing_logged:
+                        logger.info("No IMU data (Lite version?); head-scratch wake is unavailable")
+                        imu_missing_logged = True
+                    continue
+                gyro, accel = imu["gyroscope"], imu["accelerometer"]
+                if (
+                    isinstance(gyro, list)
+                    and isinstance(accel, list)
+                    and self._scratch_detector.update(
+                        (float(gyro[0]), float(gyro[1]), float(gyro[2])),
+                        (float(accel[0]), float(accel[1]), float(accel[2])),
+                    )
+                ):
+                    logger.info("Head scratched; waking up")
+                    self.request_wake("head scratch")

@@ -78,3 +78,27 @@ def test_load_startup_settings_into_runtime_preserves_inherited_env_without_save
 
     assert settings == StartupSettings()
     assert applied_profiles == []
+
+
+def test_fresh_install_boots_as_the_droid(monkeypatch, tmp_path) -> None:
+    """With nothing saved and no env override, the first start uses the droid profile."""
+    applied_profiles: list[str | None] = []
+    monkeypatch.delenv("REACHY_MINI_CUSTOM_PROFILE", raising=False)
+    monkeypatch.setattr("k3_droid.config.set_custom_profile", lambda profile: applied_profiles.append(profile))
+
+    settings = load_startup_settings_into_runtime(tmp_path)
+
+    assert settings.profile == "droid"
+    assert applied_profiles == ["droid"]
+
+
+def test_saved_default_stays_default(monkeypatch, tmp_path) -> None:
+    """A saved default choice is kept instead of falling back to the droid."""
+    write_startup_settings(tmp_path, profile="default", voice=None)
+    applied_profiles: list[str | None] = []
+    monkeypatch.delenv("REACHY_MINI_CUSTOM_PROFILE", raising=False)
+    monkeypatch.setattr("k3_droid.config.set_custom_profile", lambda profile: applied_profiles.append(profile))
+
+    load_startup_settings_into_runtime(tmp_path)
+
+    assert applied_profiles == ["default"]

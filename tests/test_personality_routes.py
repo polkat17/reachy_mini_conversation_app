@@ -246,8 +246,8 @@ def test_profile_load_failure_is_not_returned_as_editable_content() -> None:
     assert "result" not in response
 
 
-def test_applying_default_persists_runtime_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The canonical default ID should map to no custom runtime profile."""
+def test_applying_default_persists_it_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default is saved by name, so the next start does not fall back to the first-run droid profile."""
     monkeypatch.setattr(config, "REACHY_MINI_CUSTOM_PROFILE", None)
     app = FastAPI()
     handler = MagicMock()
@@ -265,7 +265,7 @@ def test_applying_default_persists_runtime_none(monkeypatch: pytest.MonkeyPatch)
     response = _rpc_call(TestClient(app), "personalities.apply", {"name": "default", "persist": True})
 
     assert response["result"]["startup"] == "default"
-    persist_personality.assert_called_once_with(None, "Aiden")
+    persist_personality.assert_called_once_with("default", "Aiden")
 
 
 def test_force_reloads_active_personality(monkeypatch: pytest.MonkeyPatch) -> None:

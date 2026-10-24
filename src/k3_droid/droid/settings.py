@@ -42,6 +42,7 @@ class DroidSettings:
     watch_cats: bool
     listen_for_sounds: bool
     antenna_wake: bool
+    head_scratch_wake: bool
 
     @classmethod
     def from_env(cls) -> "DroidSettings":
@@ -65,4 +66,5 @@ class DroidSettings:
             watch_cats=_env_flag("DROID_WATCH_CATS", default=True),
             listen_for_sounds=_env_flag("DROID_LISTEN_FOR_SOUNDS", default=True),
             antenna_wake=_env_flag("DROID_ANTENNA_WAKE", default=True),
+            head_scratch_wake=_env_flag("DROID_HEAD_SCRATCH_WAKE", default=True),
         )

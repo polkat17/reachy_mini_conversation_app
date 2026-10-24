@@ -483,6 +483,7 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 | `DROID_PRESENCE_INTERVAL_S` | Seconds between camera looks for faces and the cat. Default `2`, sized for the Wireless robot's CM4. |
 | `DROID_WATCH_CATS` / `DROID_LISTEN_FOR_SOUNDS` | Switch off cat detection or the music and meow classifier to save CPU. Default on. |
 | `DROID_ANTENNA_WAKE` | Flicking an antenna wakes a dormant droid. Default on. |
+| `DROID_HEAD_SCRATCH_WAKE` | Scratching the head (about a second of rubbing, felt through the head's IMU on the Wireless version) wakes a dormant droid. Default on. |
 | `DROID_GITHUB_REPO` / `DROID_GITHUB_TOKEN` | Where upgrade requests are filed; the token needs only issue access. |
 | `DROID_UPDATE_SPACE` / `DROID_AUTO_UPDATE` | The Hugging Face Space mirroring `main`, and whether to install newer revisions at night. |
 | `DROID_HOME_ASSISTANT_URL` / `DROID_HOME_ASSISTANT_TOKEN` | Home Assistant address and long-lived access token. |

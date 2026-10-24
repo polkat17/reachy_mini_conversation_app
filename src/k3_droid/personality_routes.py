@@ -254,10 +254,8 @@ class PersonalityOps:
             if not persist or self._persist_personality is None:
                 return
             try:
-                self._persist_personality(
-                    None if selected_name == DEFAULT_PROFILE_NAME else selected_name,
-                    self._voice_override(),
-                )
+                # Saved by name: an empty choice would fall back to the droid on the next start.
+                self._persist_personality(selected_name, self._voice_override())
                 self._set_startup_choice(selected_name)
                 persisted_choice = self._startup_choice_value()
             except Exception as exc:

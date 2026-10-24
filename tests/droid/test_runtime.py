@@ -357,7 +357,7 @@ def test_antenna_flick_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyP
     woke = threading.Event()
     runtime.request_wake = MagicMock(side_effect=lambda reason: woke.set())  # type: ignore[method-assign]
 
-    watcher = threading.Thread(target=runtime._watch_antennas, daemon=True)
+    watcher = threading.Thread(target=runtime._watch_touch, daemon=True)
     watcher.start()
     try:
         assert woke.wait(2.0)
@@ -365,6 +365,31 @@ def test_antenna_flick_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyP
         runtime.stop()
         watcher.join(1.0)
     runtime.request_wake.assert_called_once_with("antenna")
+
+
+def test_head_scratch_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """While dormant, a sustained jiggle of the head IMU requests a wake-up."""
+    monkeypatch.setattr(runtime_mod, "_ANTENNA_POLL_S", 0.005)
+    monkeypatch.setattr(runtime_mod, "_ANTENNA_SETTLE_S", 0.02)
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.settings = dataclasses.replace(runtime.settings, antenna_wake=False, head_scratch_wake=True)
+    runtime.stream.is_dormant = True  # type: ignore[union-attr]
+    still = {"gyroscope": [0.0, 0.0, 0.0], "accelerometer": [0.0, 0.0, 9.81]}
+    scratching = {"gyroscope": [0.2, 0.1, 0.0], "accelerometer": [0.0, 0.0, 9.81]}
+    readings = iter([still] * 10 + [scratching] * 200)
+    type(runtime.deps.reachy_mini).imu = property(lambda self: next(readings))
+    woke = threading.Event()
+    runtime.request_wake = MagicMock(side_effect=lambda reason: woke.set())  # type: ignore[method-assign]
+
+    watcher = threading.Thread(target=runtime._watch_touch, daemon=True)
+    watcher.start()
+    try:
+        assert woke.wait(2.0)
+    finally:
+        runtime.stop()
+        watcher.join(1.0)
+    runtime.request_wake.assert_called_once_with("head scratch")
+    runtime.deps.reachy_mini.get_current_joint_positions.assert_not_called()
 
 
 def test_presence_interval_backs_off(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
