@@ -233,7 +233,9 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
                         model="gpt-4o-transcribe",
                         language=config.REALTIME_TRANSCRIPTION_LANGUAGE,
                     ),
-                    turn_detection=ServerVad(type="server_vad", interrupt_response=True),
+                    turn_detection=ServerVad(
+                        type="server_vad", interrupt_response=True, create_response=self.auto_respond
+                    ),
                 ),
                 output=RealtimeAudioConfigOutputParam(
                     format=_native_rate_audio_pcm(),  # type: ignore[typeddict-item]
@@ -442,6 +444,13 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
         This method never blocks the caller.
         """
         await self._pending_responses.put(kwargs)
+
+    async def respond(self) -> None:
+        """Queue a response to the conversation so far (``auto_respond`` off leaves user speech unanswered)."""
+        if not self.connection:
+            raise RuntimeError("respond: no active session")
+        self._mark_activity("respond")
+        await self._safe_response_create()
 
     async def say(self, text: str) -> None:
         """Inject ``text`` as a turn and have the model voice it now.

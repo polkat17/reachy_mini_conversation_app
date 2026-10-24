@@ -48,6 +48,8 @@ class DroidSettings:
     listen_for_sounds: bool
     antenna_wake: bool
     head_scratch_wake: bool
+    reply_when_addressed: bool
+    follow_up_window_s: float
 
     @classmethod
     def from_env(cls) -> "DroidSettings":
@@ -73,4 +75,6 @@ class DroidSettings:
             listen_for_sounds=_env_flag("DROID_LISTEN_FOR_SOUNDS", default=True),
             antenna_wake=_env_flag("DROID_ANTENNA_WAKE", default=True),
             head_scratch_wake=_env_flag("DROID_HEAD_SCRATCH_WAKE", default=True),
+            reply_when_addressed=_env_flag("DROID_REPLY_WHEN_ADDRESSED", default=True),
+            follow_up_window_s=max(0.0, _env_float("DROID_FOLLOW_UP_WINDOW_S", 30.0)),
         )

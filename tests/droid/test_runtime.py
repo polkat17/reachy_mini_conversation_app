@@ -25,7 +25,7 @@ async def test_runtime_emotes_after_silent_reply(tmp_path) -> None:
     """The runtime listens to the attached handler and queues the fallback emote."""
     runtime = DroidRuntime(MagicMock(), tmp_path)
     runtime._emotion_tool = AsyncMock(return_value={"status": "queued"})  # type: ignore[method-assign]
-    handler = MagicMock()
+    handler = MagicMock(respond=AsyncMock())
     runtime.attach(handler)
     listener = handler.set_conversation_listener.call_args.args[0]
 
@@ -638,3 +638,23 @@ async def test_connection_watchdog_restarts_the_app_after_a_lasting_drop(
     runtime.deps.reachy_mini.client._is_alive = True
     await runtime._watch_connection()
     assert runtime.connection_lost_since is None
+
+
+@pytest.mark.asyncio
+async def test_droid_answers_only_speech_meant_for_it(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Automatic replies are off; the runtime asks for a reply only when addressed (here, two people in view)."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    runtime.identity.activated = True
+    runtime.people_in_view = MagicMock(return_value=["Pasha", "stranger"])  # type: ignore[method-assign]
+    handler = MagicMock(respond=AsyncMock())
+    runtime.attach(handler)
+    listener = handler.set_conversation_listener.call_args.args[0]
+    assert handler.auto_respond is False
+
+    listener(ConversationEvent("user_transcript", "Ты купила хлеб?"))
+    await asyncio.sleep(0)
+    handler.respond.assert_not_awaited()
+
+    listener(ConversationEvent("user_transcript", "Кей-три, а ты что думаешь?"))
+    await asyncio.sleep(0)
+    handler.respond.assert_awaited_once()

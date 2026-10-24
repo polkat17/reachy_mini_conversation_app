@@ -51,6 +51,7 @@ from k3_droid.droid.idle_life import IdleLife, in_quiet_hours, idle_remark_promp
 from k3_droid.droid.reactions import cat_prompt, presence_prompt, break_nudge_prompt
 from k3_droid.tools.move_head import MoveHead
 from k3_droid.droid.activation import ActivationProgress
+from k3_droid.droid.addressing import should_reply, address_names
 from k3_droid.droid.day_review import briefing_line, fetch_day_review
 from k3_droid.tools.core_tools import ToolDependencies
 from k3_droid.tools.stop_dance import StopDance
@@ -81,6 +82,7 @@ _UPDATE_CHECK_INTERVAL_S = 20 * 3600.0
 _UPDATE_HOURS = range(2, 6)
 _DAY_REVIEW_RECHECK_S = 600.0
 _MOTOR_CHECK_INTERVAL_S = 5.0
+_MEETING_HEADS_UP_S = 10 * 60.0
 _CONNECTION_LOST_RESTART_S = 15.0
 _CONNECTION_RESTART_COOLDOWN_S = 600.0
 
@@ -131,6 +133,7 @@ class DroidRuntime:
         self._stop = threading.Event()
         self._transition_lock = asyncio.Lock()
         self._last_motor_check = 0.0
+        self._last_engaged_at = float("-inf")
         self.motor_restores = 0
         self.motor_restore_note = ""
         self.connection_lost_since: float | None = None
@@ -162,6 +165,7 @@ class DroidRuntime:
     def attach(self, handler: ConversationHandler) -> None:
         """Listen to ``handler``; called for every handler the app builds."""
         self.handler = handler
+        handler.auto_respond = not self.settings.reply_when_addressed
         handler.set_conversation_listener(self._on_event)
 
     def bind_stream(self, stream: "LocalStream") -> None:
@@ -222,11 +226,31 @@ class DroidRuntime:
         self._loop = asyncio.get_running_loop()
         if event.kind == "user_transcript":
             self._last_user_turn_at = time.monotonic()
+            self._maybe_reply(event.text)
+        elif event.kind == "response_done":
+            self._last_engaged_at = time.monotonic()
         for listener in self._event_listeners:
             try:
                 listener(event)
             except Exception as e:
                 logger.warning("Droid event listener failed on %s: %s", event.kind, e)
+
+    def _maybe_reply(self, transcript: str) -> None:
+        """With automatic replies off, answer only speech meant for the droid; the rest stays as context."""
+        handler = self.handler
+        if handler is None or handler.auto_respond:
+            return
+        reply = not self.identity.activated or should_reply(
+            transcript,
+            names=address_names(self.identity.droid_name),
+            people_in_view=len(self.people_in_view()),
+            seconds_since_engaged=time.monotonic() - self._last_engaged_at,
+            follow_up_window_s=self.settings.follow_up_window_s,
+        )
+        logger.info("Heard %r: %s", transcript[:60], "replying" if reply else "staying quiet")
+        if reply:
+            self._last_engaged_at = time.monotonic()
+            self._spawn(handler.respond())
 
     def _spawn(self, coro: Coroutine[Any, Any, Any]) -> None:
         if self._loop is None:
@@ -518,6 +542,7 @@ class DroidRuntime:
         await self._maybe_nudge_break()
         await self._deliver_due_reminders()
         await self._maybe_morning_briefing()
+        await self._maybe_meeting_heads_up()
         await self._maybe_write_diary()
         await self._maybe_keep_dancing()
         if not self.settings.idle_life or not self.deps.movement_manager.is_idle():
@@ -729,6 +754,40 @@ class DroidRuntime:
                 else ""
             )
         )
+
+    async def _maybe_meeting_heads_up(self) -> None:
+        """Speak up once, about ten minutes before each meeting in today's review."""
+        if not self.identity.activated or self._quiet_now() or self.seconds_since_activity() < 5:
+            return
+        review = await asyncio.to_thread(self.day_review)
+        if review is None:
+            return
+        now = datetime.now()
+        for meeting in review.get("meetings") or []:
+            if not isinstance(meeting, dict):
+                continue
+            start = str(meeting.get("start") or "")
+            try:
+                starts_at = datetime.combine(now.date(), datetime.strptime(start, "%H:%M").time())
+            except ValueError:
+                continue
+            if not 0 < (starts_at - now).total_seconds() <= _MEETING_HEADS_UP_S:
+                continue
+            title = str(meeting.get("title") or "a meeting")
+            key = f"heads_up:{now:%Y-%m-%d}:{start}:{title}"
+            if self.memory.get_state(key):
+                continue
+            self.memory.set_state(key, "1")
+            details = ", ".join(
+                f"{label} {value}"
+                for label, value in (("with", meeting.get("with")), ("prepare:", meeting.get("prepare")))
+                if value
+            )
+            await self.say_event(
+                f"[SYSTEM EVENT] {title} starts at {start}" + (f" ({details})" if details else "") + ". "
+                f"Give {self.identity.owner_name} a one-line heads-up, mentioning what to prepare if anything."
+            )
+            return
 
     def day_review(self) -> dict[str, Any] | None:
         """Return today's review written by the Claude routine, re-checking the dataset at most every 10 minutes."""

@@ -481,6 +481,7 @@ The `droid` profile turns Reachy Mini into a companion droid from the future. Se
 | `DROID_PRESENCE_INTERVAL_S` | Seconds between camera looks for faces and the cat. Default `2`, sized for the Wireless robot's CM4. |
 | `DROID_WATCH_CATS` / `DROID_LISTEN_FOR_SOUNDS` | Switch off cat detection or the music and meow classifier to save CPU. Default on. |
 | `DROID_ANTENNA_WAKE` | Flicking an antenna wakes a dormant droid. Default on. |
+| `DROID_REPLY_WHEN_ADDRESSED` / `DROID_FOLLOW_UP_WINDOW_S` | Answer only speech meant for the droid: when named (its designation, «К3», «Кей-три», «дроид», «робот», "droid", "robot"), within the follow-up window after its own reply (default 30 s), or when at most one person is in view. Everything said stays as context. Default on. |
 | `DROID_HEAD_SCRATCH_WAKE` | Scratching the head (about a second of rubbing, felt through the head's IMU on the Wireless version) wakes a dormant droid. Default on. |
 | `DROID_GITHUB_REPO` / `DROID_GITHUB_TOKEN` | Where upgrade requests are filed; the token needs only issue access. |
 | `DROID_UPDATE_SPACE` / `DROID_AUTO_UPDATE` | The Hugging Face Space to update from (default `Polkat/k3-droid`), and whether to install newer revisions at night (default off; the control page's "Check for upgrade now" installs on demand). |

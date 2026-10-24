@@ -102,3 +102,30 @@ async def test_day_review_tool_stays_private_with_guests() -> None:
     droid.day_review.return_value = REVIEW
     result = await DayReview()(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock(), droid=droid))
     assert result == REVIEW
+
+
+class _NineFifty(datetime):
+    @classmethod
+    def now(cls, tz=None):  # type: ignore[override]
+        return cls(2026, 10, 19, 9, 50)
+
+
+@pytest.mark.asyncio
+async def test_meeting_heads_up_fires_once_ten_minutes_before(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """At 09:50 the 10:00 meeting gets one heads-up with what to prepare; the next tick stays quiet."""
+    monkeypatch.setattr(runtime_mod, "datetime", _NineFifty)
+    review = dict(
+        REVIEW, meetings=[{"start": "10:00", "title": "Budget review", "with": "Anna", "prepare": "Q3 numbers"}]
+    )
+    runtime = runtime_mod.DroidRuntime(MagicMock(), tmp_path)
+    runtime.identity = MagicMock(activated=True, owner_name="Pasha", protocols=MagicMock(quiet_hours=""))
+    runtime.seconds_since_activity = MagicMock(return_value=60.0)  # type: ignore[method-assign]
+    runtime.day_review = MagicMock(return_value=review)  # type: ignore[method-assign]
+    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    await runtime._maybe_meeting_heads_up()
+    await runtime._maybe_meeting_heads_up()
+
+    runtime.say_event.assert_awaited_once()
+    prompt = runtime.say_event.await_args.args[0]
+    assert "Budget review starts at 10:00" in prompt and "Q3 numbers" in prompt and "Anna" in prompt
