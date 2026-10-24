@@ -517,3 +517,25 @@ def test_control_page_turns_the_base_and_reports_its_angle(tmp_path, monkeypatch
     manager.set_head_tracking.assert_called_with(False)
     assert status["base"] == "commanded 45°, measured 0°, face tracking off"
     assert client.post("/droid/api/turn/up").status_code == 404
+
+
+def test_restore_motors_clears_stuck_moves_and_wakes_the_body(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore motors stops daemon moves still listed as running, then turns torque on and restarts movement."""
+    runtime = _runtime(tmp_path, monkeypatch)
+    calls: list[tuple[str, str]] = []
+
+    def fake_daemon(robot, path, method="GET", payload=None):  # noqa: ANN001, ANN202
+        calls.append((method, path))
+        return [{"uuid": "stuck"}] if path == "/api/move/running" else {}
+
+    monkeypatch.setattr(runtime_mod, "daemon_request", fake_daemon)
+    manager = runtime.deps.movement_manager
+
+    result = runtime.restore_motors()
+
+    assert result.startswith("Motors restored")
+    assert ("POST", "/api/move/stop") in calls
+    runtime.deps.reachy_mini.enable_motors.assert_called_once_with()
+    runtime.deps.reachy_mini.wake_up.assert_called_once_with()
+    manager.stop.assert_called_once_with(reset_to_neutral=False)
+    manager.start.assert_called_once_with()

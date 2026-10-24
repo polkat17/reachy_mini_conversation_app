@@ -104,18 +104,43 @@ def _is_sleep_head_pose(head_pose: npt.ArrayLike) -> bool:
     )
 
 
+def robot_motor_state(robot: ReachyMini) -> tuple[str | None, bool | None]:
+    """Return the daemon's motor mode ("enabled", "disabled", "gravity_compensation") and whether a move runs."""
+    mode: object = None
+    try:
+        backend = getattr(robot.client.get_status(wait=True, timeout=2.0), "backend_status", None)
+        mode = getattr(backend, "motor_control_mode", None)
+    except Exception:
+        mode = None
+    if mode is None:
+        try:
+            mode = daemon_request(robot, "/api/motors/status").get("mode")
+        except Exception:  # best effort: this only feeds a wake decision and a status line
+            mode = None
+    try:
+        busy: bool | None = bool(daemon_request(robot, "/api/move/running"))
+    except Exception:
+        busy = None
+    mode_text = getattr(mode, "value", mode)
+    return (str(mode_text) if mode_text is not None else None), busy
+
+
 def wake_up_if_sleeping(robot: ReachyMini, logger: logging.Logger) -> bool:
-    """Run the SDK wake-up movement when Reachy starts from the sleep pose."""
+    """Run the SDK wake-up movement when Reachy starts from the sleep pose or with its motors off."""
     try:
         head_pose = robot.get_current_head_pose()
     except Exception as e:
         logger.warning("Could not read robot pose before startup wake-up check: %s", e)
         return False
 
-    if not _is_sleep_head_pose(head_pose):
+    # The daemon leaves the motors limp after sleep and after an app stops; a limp robot ignores every target,
+    # so it must be woken even when the head is not resting exactly in the sleep pose.
+    motor_mode, _ = robot_motor_state(robot)
+    motors_off = motor_mode is not None and motor_mode != "enabled"
+    if not (_is_sleep_head_pose(head_pose) or motors_off):
         return False
 
-    logger.info("Robot is in sleep pose; running wake-up movement.")
+    logger.info("Robot is asleep (motors %s); running wake-up movement.", motor_mode or "unknown")
     try:
         robot.enable_motors()
         robot.wake_up()

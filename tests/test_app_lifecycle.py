@@ -33,24 +33,39 @@ def test_request_stop_current_app_posts_to_daemon(monkeypatch) -> None:
     assert app_lifecycle.request_stop_current_app(robot, MagicMock())
 
 
+def _robot(mode: str = "enabled") -> MagicMock:
+    robot = MagicMock()
+    robot.client.get_status.return_value = SimpleNamespace(backend_status=SimpleNamespace(motor_control_mode=mode))
+    return robot
+
+
 def test_wake_up_if_sleeping_enables_motors_before_wake_up() -> None:
     """Startup should enable sleeping motors before playing the wake-up movement."""
-    robot = MagicMock()
+    robot = _robot()
     robot.get_current_head_pose.return_value = SLEEP_HEAD_POSE.copy()
 
     assert app_lifecycle.wake_up_if_sleeping(robot, MagicMock())
 
     robot.get_current_joint_positions.assert_not_called()
-    assert robot.method_calls == [
-        call.get_current_head_pose(),
+    assert [c for c in robot.method_calls if c in (call.enable_motors(), call.wake_up())] == [
         call.enable_motors(),
         call.wake_up(),
     ]
 
 
+def test_wake_up_if_sleeping_wakes_limp_motors_outside_the_sleep_pose() -> None:
+    """Motors left off by the daemon are switched on even when the head is not in the sleep pose."""
+    robot = _robot("disabled")
+    robot.get_current_head_pose.return_value = np.eye(4)
+
+    assert app_lifecycle.wake_up_if_sleeping(robot, MagicMock())
+    robot.enable_motors.assert_called_once_with()
+    robot.wake_up.assert_called_once_with()
+
+
 def test_wake_up_if_sleeping_skips_non_sleep_head_pose() -> None:
     """Startup should leave an already-awake robot alone."""
-    robot = MagicMock()
+    robot = _robot()
     robot.get_current_head_pose.return_value = np.eye(4)
 
     assert not app_lifecycle.wake_up_if_sleeping(robot, MagicMock())
@@ -90,7 +105,7 @@ def test_request_stop_current_app_returns_false_on_urlerror(monkeypatch) -> None
 
 def test_wake_up_if_sleeping_handles_pose_read_failure() -> None:
     """A robot that cannot report its pose skips the wake-up movement."""
-    robot = MagicMock()
+    robot = _robot()
     robot.get_current_head_pose.side_effect = RuntimeError("no telemetry")
 
     assert not app_lifecycle.wake_up_if_sleeping(robot, MagicMock())
@@ -99,7 +114,7 @@ def test_wake_up_if_sleeping_handles_pose_read_failure() -> None:
 
 def test_wake_up_if_sleeping_reports_wake_up_failure() -> None:
     """A wake-up movement that fails is reported without raising."""
-    robot = MagicMock()
+    robot = _robot()
     robot.get_current_head_pose.return_value = SLEEP_HEAD_POSE.copy()
     robot.wake_up.side_effect = RuntimeError("motor fault")
 
@@ -109,7 +124,7 @@ def test_wake_up_if_sleeping_reports_wake_up_failure() -> None:
 
 def test_wake_up_if_sleeping_ignores_malformed_pose() -> None:
     """A pose that cannot be coerced to a float array is treated as not-sleeping."""
-    robot = MagicMock()
+    robot = _robot()
     robot.get_current_head_pose.return_value = "not-a-pose"
 
     assert not app_lifecycle.wake_up_if_sleeping(robot, MagicMock())
@@ -118,7 +133,7 @@ def test_wake_up_if_sleeping_ignores_malformed_pose() -> None:
 
 def test_wake_up_if_sleeping_ignores_wrong_shape_pose() -> None:
     """A pose that is not 4x4 is treated as not-sleeping."""
-    robot = MagicMock()
+    robot = _robot()
     robot.get_current_head_pose.return_value = np.eye(3)
 
     assert not app_lifecycle.wake_up_if_sleeping(robot, MagicMock())

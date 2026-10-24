@@ -58,8 +58,11 @@
 
   <section>
     <h2>Base</h2>
-    <p>Turn the base directly, without the conversation. Face tracking switches off so the droid keeps facing
+    <p>If nothing moves, check the Motors row: it should say "enabled". Restore motors switches them back on.
+      Turn the base directly, without the conversation. Face tracking switches off so the droid keeps facing
       the new direction. The Base row in Status shows the commanded and measured angle.</p>
+    <button data-post="/droid/api/restore-motors"
+      data-confirm="Stop any stuck move, switch the motors on and play the wake-up move?">Restore motors</button>
     <button class="secondary" data-post="/droid/api/turn/left">Turn left 45°</button>
     <button class="secondary" data-post="/droid/api/turn/home">Face front</button>
     <button class="secondary" data-post="/droid/api/turn/right">Turn right 45°</button>
@@ -96,7 +99,7 @@
     droid_name: "Designation", owner_name: "Owner", activated: "Activated", dormant: "State",
     activation_stage: "Activation stage", in_view: "In view",
     notifications: "Phone notifications",
-    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests", day_review: "Day review", movement: "Movement", base: "Base",
+    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests", day_review: "Day review", movement: "Movement", motors: "Motors", movement_error: "Last movement error", base: "Base",
   };
 
   function show(text) { message.textContent = text; }

@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from k3_droid.droid.notify import notifications_enabled
+from k3_droid.app_lifecycle import robot_motor_state
 from k3_droid.droid.runtime import DroidRuntime
 from k3_droid.droid.updater import load_update_state
 from k3_droid.droid.upgrades import upgrades_enabled
@@ -38,8 +39,18 @@ def droid_status(runtime: DroidRuntime) -> dict[str, Any]:
         "upgrade_requests": upgrades_enabled(runtime.settings),
         "day_review": runtime.day_review_note,
         "movement": "running" if runtime.deps.movement_manager.is_running() else "stopped (asleep)",
+        "motors": _motors_line(runtime),
+        "movement_error": runtime.deps.movement_manager.last_command_error or "none",
         "base": _base_line(runtime),
     }
+
+
+def _motors_line(runtime: DroidRuntime) -> str:
+    """Return the daemon's motor mode, and whether one of its own moves is blocking app targets."""
+    mode, busy = robot_motor_state(runtime.deps.reachy_mini)
+    if mode is None:
+        return "unknown (no status from the robot)"
+    return mode + (", robot busy with a built-in move (app commands ignored)" if busy else "")
 
 
 def _base_line(runtime: DroidRuntime) -> str:
@@ -151,6 +162,10 @@ def register_droid_routes(app: FastAPI, runtime: DroidRuntime) -> None:
         if not runtime.submit(runtime.complete_activation()):
             raise HTTPException(status_code=409, detail="the droid runtime is not running yet")
         return {"status": "Activated. Stages not done yet keep their defaults; say 'redo' to change one."}
+
+    @app.post("/droid/api/restore-motors")
+    def _restore_motors() -> dict[str, Any]:
+        return {"status": runtime.restore_motors()}
 
     @app.post("/droid/api/turn/{direction}")
     def _turn(direction: str) -> dict[str, Any]:

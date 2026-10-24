@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 from k3_droid.config import config
 from k3_droid.memory import list_memory_facts
 from k3_droid.streaming import AudioArray
+from k3_droid.daemon_api import DaemonApiError, daemon_request
 from k3_droid.tools.beep import Beep
 from k3_droid.droid.audio import LoudnessTrigger, to_mono_16k
 from k3_droid.droid.faces import FaceRegistry
@@ -338,6 +339,26 @@ class DroidRuntime:
         except Exception as e:
             logger.error("Failed to run the wake-up movement: %s", e)
         self.deps.movement_manager.start()
+
+    def restore_motors(self) -> str:
+        """Clear a stuck daemon move, turn the motors on, wake the body and restart the control loop."""
+        if self.is_dormant:
+            return (
+                "The droid is asleep; use Wake up instead."
+                if "error" in self.request_wake("restore")
+                else "Waking up."
+            )
+        robot = self.deps.reachy_mini
+        # The daemon ignores every app target while one of its own moves runs, so a move that never ended freezes the
+        # robot; stop whatever it still lists as running.
+        try:
+            for move in daemon_request(robot, "/api/move/running") or []:
+                daemon_request(robot, "/api/move/stop", method="POST", payload=move)
+        except DaemonApiError as e:
+            logger.warning("Could not clear running daemon moves: %s", e)
+        self.deps.movement_manager.stop(reset_to_neutral=False)
+        self._wake_body()
+        return "Motors restored: torque on, wake-up move played, movement restarted."
 
     # ---- audio ----------------------------------------------------------------
 

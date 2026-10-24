@@ -242,6 +242,7 @@ class MovementManager:
         self._last_set_target_err = 0.0
         self._set_target_err_interval = 1.0  # seconds between error logs
         self._set_target_err_suppressed = 0
+        self.last_command_error: str | None = None  # shown on the control page
 
         # Cross-thread signalling
         self._command_queue: "Queue[Tuple[str, Any]]" = Queue()
@@ -658,6 +659,7 @@ class MovementManager:
         try:
             self.current_robot.set_target(head=head, antennas=antennas, body_yaw=body_yaw)
         except Exception as e:
+            self.last_command_error = f"{time.strftime('%H:%M:%S')} {type(e).__name__}: {e}"
             now = self._now()
             if now - self._last_set_target_err >= self._set_target_err_interval:
                 msg = f"Failed to set robot target: {e}"
