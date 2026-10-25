@@ -257,7 +257,6 @@ def run(
     if droid_runtime is not None:
         from k3_droid.droid.web import register_droid_routes
 
-        droid_runtime.bind_stream(stream_manager)
         if effective_settings_app is not None:
             register_droid_routes(effective_settings_app, droid_runtime)
 
@@ -314,8 +313,7 @@ def run(
         finally:
             go_to_sleep_lock.release()
 
-    # The droid never stops itself: sleeping parks it in dormant mode until the next wake-up.
-    deps.go_to_sleep = go_to_sleep_and_stop_app if droid_runtime is None else droid_runtime.request_dormant
+    deps.go_to_sleep = go_to_sleep_and_stop_app
 
     def run_go_to_sleep_tool() -> dict[str, Any]:
         return app_lifecycle.run_go_to_sleep_tool(deps, logger)

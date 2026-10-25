@@ -233,9 +233,7 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
                         model="gpt-4o-transcribe",
                         language=config.REALTIME_TRANSCRIPTION_LANGUAGE,
                     ),
-                    turn_detection=ServerVad(
-                        type="server_vad", interrupt_response=True, create_response=self.auto_respond
-                    ),
+                    turn_detection=ServerVad(type="server_vad", interrupt_response=True),
                 ),
                 output=RealtimeAudioConfigOutputParam(
                     format=_native_rate_audio_pcm(),  # type: ignore[typeddict-item]
@@ -336,17 +334,6 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
         )
         return "Applied personality. Will take effect on next connection."
 
-    async def refresh_instructions(self) -> None:
-        """Push freshly built session instructions to the live session, if one is open."""
-        if self.connection is None:
-            return
-        await self.connection.session.update(
-            session=RealtimeSessionCreateRequestParam(
-                type="realtime",
-                instructions=get_session_instructions(self.instance_path),
-            ),
-        )
-
     async def _emit_debounced_partial(self, transcript: str, item_id: str, sequence_counter: int) -> None:
         """Emit partial transcript after debounce delay."""
         try:
@@ -444,13 +431,6 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
         This method never blocks the caller.
         """
         await self._pending_responses.put(kwargs)
-
-    async def respond(self) -> None:
-        """Queue a response to the conversation so far (``auto_respond`` off leaves user speech unanswered)."""
-        if not self.connection:
-            raise RuntimeError("respond: no active session")
-        self._mark_activity("respond")
-        await self._safe_response_create()
 
     async def say(self, text: str) -> None:
         """Inject ``text`` as a turn and have the model voice it now.

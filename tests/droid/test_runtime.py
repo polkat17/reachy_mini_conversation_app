@@ -1,195 +1,48 @@
-import time
-import asyncio
-import threading
 import dataclasses
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
-import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from k3_droid.droid import runtime as runtime_mod
 from k3_droid.droid.web import register_droid_routes
-from k3_droid.droid.senses import SoundEvent
 from k3_droid.droid.journal import SessionSummary
 from k3_droid.droid.runtime import DroidRuntime
-from k3_droid.droid.updater import UpdateState, load_update_state, save_update_state
-from k3_droid.droid.presence import PresenceEvent
+from k3_droid.droid.updater import HEALTH_FILENAME, UpdateState, load_update_state, save_update_state
 from k3_droid.conversation_handler import ConversationEvent
 
 
-@pytest.mark.asyncio
-async def test_runtime_emotes_after_silent_reply(tmp_path) -> None:
-    """The runtime listens to the attached handler and queues the fallback emote."""
-    runtime = DroidRuntime(MagicMock(), tmp_path)
-    runtime._emotion_tool = AsyncMock(return_value={"status": "queued"})  # type: ignore[method-assign]
-    handler = MagicMock(respond=AsyncMock())
+def _runtime(tmp_path) -> DroidRuntime:  # noqa: ANN001
+    return DroidRuntime(MagicMock(), tmp_path)
+
+
+def _listener(runtime: DroidRuntime):  # noqa: ANN202
+    handler = MagicMock()
     runtime.attach(handler)
-    listener = handler.set_conversation_listener.call_args.args[0]
+    return handler.set_conversation_listener.call_args.args[0]
+
+
+def test_runtime_records_transcripts_only(tmp_path) -> None:  # noqa: ANN001
+    """Final user and assistant lines go into the journal; other events are ignored."""
+    runtime = _runtime(tmp_path)
+    listener = _listener(runtime)
 
     for event in (
-        ConversationEvent("user_transcript", "hello"),
-        ConversationEvent("assistant_transcript", "Welcome back."),
+        ConversationEvent("session_started"),
+        ConversationEvent("user_transcript", "Привет"),
+        ConversationEvent("tool_call", "play_emotion"),
+        ConversationEvent("assistant_transcript", "Здравствуй."),
         ConversationEvent("response_done"),
     ):
         listener(event)
-    await asyncio.sleep(0)
 
-    runtime._emotion_tool.assert_awaited_once_with(runtime.deps, emotion="happy")
-
-
-class _FakeStream:
-    def __init__(self) -> None:
-        self.is_dormant = False
-        self.audio_tap = None
-        self.output_filter = None
-        self.asyncio_loop = None
-
-    async def enter_dormant(self) -> None:
-        self.is_dormant = True
-
-    async def wake(self) -> None:
-        self.is_dormant = False
+    assert runtime.journal.lines == [("user", "Привет"), ("assistant", "Здравствуй.")]
 
 
-def _runtime(tmp_path, monkeypatch: pytest.MonkeyPatch) -> DroidRuntime:
-    monkeypatch.setattr(runtime_mod, "_GOODBYE_GRACE_S", 0.0)
-    runtime = DroidRuntime(MagicMock(), tmp_path)
-    runtime.bind_stream(_FakeStream())  # type: ignore[arg-type]
-    runtime.beep = AsyncMock()  # type: ignore[method-assign]
-    return runtime
-
-
-@pytest.mark.asyncio
-async def test_dormant_and_wake_cycle(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Dormant parks the body and session; wake restores both and runs hooks."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    dormant_reasons: list[str] = []
-    wake_reasons: list[str] = []
-
-    async def on_dormant(reason: str) -> None:
-        dormant_reasons.append(reason)
-
-    async def on_wake(reason: str) -> None:
-        wake_reasons.append(reason)
-
-    runtime.on_dormant.append(on_dormant)
-    runtime.on_wake.append(on_wake)
-
-    await runtime.enter_dormant("test")
-    await runtime.enter_dormant("again")
-
-    assert runtime.is_dormant
-    assert dormant_reasons == ["test"]
-    runtime.deps.reachy_mini.goto_sleep.assert_called_once()
-    runtime.deps.movement_manager.stop.assert_called_once_with(reset_to_neutral=False)
-
-    await runtime.wake("face")
-
-    assert not runtime.is_dormant
-    assert wake_reasons == ["face"]
-    runtime.deps.reachy_mini.wake_up.assert_called_once()
-    runtime.deps.movement_manager.start.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_tick_goes_dormant_after_inactivity(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """With nobody talking or in view, the droid goes dormant after the configured time."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime._loop = asyncio.get_running_loop()
-    runtime.settings = dataclasses.replace(runtime.settings, dormant_after_minutes=1.0, idle_life=False)
-    runtime._last_user_turn_at -= 120.0
-    runtime.handler = MagicMock(last_activity_time=0.0)
-
-    await runtime.tick()
-    await asyncio.sleep(0.05)
-
-    assert runtime.is_dormant
-
-
-@pytest.mark.asyncio
-async def test_loud_speech_wakes_only_a_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sustained speech wakes a dormant droid and is ignored while it is awake."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.request_wake = MagicMock()  # type: ignore[method-assign]
-    runtime.stream.is_dormant = True  # type: ignore[union-attr]
-    loud = np.full(16000, 0.3, dtype=np.float32)
-
-    runtime._wake_on_loud_speech(loud)
-    runtime.request_wake.assert_called_once_with("speech")
-
-    runtime.stream.is_dormant = False  # type: ignore[union-attr]
-    runtime._wake_on_loud_speech(loud)
-    runtime.request_wake.assert_called_once()
-
-
-def test_web_api_reports_status_and_wakes(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The control page API exposes status and forwards wake requests."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.request_wake = MagicMock(return_value={"status": "waking"})  # type: ignore[method-assign]
-    runtime.request_dormant = MagicMock(return_value={"error": "not running"})  # type: ignore[method-assign]
-    monkeypatch.setattr(runtime_mod, "fetch_day_review", MagicMock(return_value=(None, "no review for today yet")))
-    app = FastAPI()
-    register_droid_routes(app, runtime)
-    client = TestClient(app)
-
-    status = client.get("/droid/api/status").json()
-    woke = client.post("/droid/api/wake")
-    slept = client.post("/droid/api/sleep")
-
-    assert status["droid_name"] == "K3-L0" and status["dormant"] is False
-    assert status["day_review"] == "no review for today yet"
-    assert woke.json() == {"status": "waking"}
-    assert slept.status_code == 409
-    assert client.get("/droid").status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_owner_sighting_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """An activated, dormant droid wakes when it recognises its owner."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.identity.activated = True
-    runtime.stream.is_dormant = True  # type: ignore[union-attr]
-    runtime.wake = AsyncMock()  # type: ignore[method-assign]
-
-    await runtime._react_to_presence(PresenceEvent("arrived", "Pasha", True, away_s=5000.0))
-
-    runtime.wake.assert_awaited_once_with("owner_seen")
-
-
-@pytest.mark.asyncio
-async def test_stranger_is_greeted_with_startle(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """An awake droid startles at a stranger and voices a guarded greeting."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.identity.activated = True
-    runtime._emotion_tool = AsyncMock()  # type: ignore[method-assign]
-    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
-
-    await runtime._react_to_presence(PresenceEvent("arrived", "stranger", False, away_s=float("inf")))
-
-    runtime._emotion_tool.assert_awaited_once_with(runtime.deps, emotion="startled")
-    assert "never share" in runtime.say_event.await_args.args[0]
-
-
-@pytest.mark.asyncio
-async def test_presence_ignored_before_activation(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """During activation, presence events do not interrupt the protocol."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.say_event = AsyncMock()  # type: ignore[method-assign]
-
-    await runtime._react_to_presence(PresenceEvent("arrived", "stranger", False, away_s=float("inf")))
-
-    runtime.say_event.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_checkpoint_saves_episode_and_facts(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Going dormant turns the transcript into an episode plus durable facts."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.identity.activated = True
-    runtime.identity.memory_consent = True
+def test_save_session_stores_episode_and_facts(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    """Saving turns the transcript into an episode plus durable facts and starts a new transcript."""
+    runtime = _runtime(tmp_path)
     monkeypatch.setattr(
         runtime_mod,
         "summarize_session",
@@ -197,332 +50,101 @@ async def test_checkpoint_saves_episode_and_facts(tmp_path, monkeypatch: pytest.
             "Talked about Anna's visit.", "happy", ["family"], [("Anna", "Anna is Pasha's sister")]
         ),
     )
-    runtime._record_transcript(ConversationEvent("user_transcript", "Anna visits Friday"))
-    runtime._record_transcript(ConversationEvent("assistant_transcript", "Noted."))
+    runtime.journal.add("user", "Anna visits Friday")
+    runtime.journal.add("assistant", "Noted.")
 
-    await runtime.enter_dormant("test")
+    runtime.save_session("test")
 
     assert runtime.memory.episodes()[0].summary == "Talked about Anna's visit."
     assert runtime.memory.facts()[0].text == "Anna is Pasha's sister"
     assert runtime.journal.lines == []
 
 
-@pytest.mark.asyncio
-async def test_due_reminder_is_spoken_and_sent_when_owner_away(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Due reminders are voiced, marked delivered, and pushed to the phone when the owner is not in view."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
-    runtime.handler = MagicMock(_is_connected=MagicMock(return_value=True))
-    notify = AsyncMock(return_value=True)
-    monkeypatch.setattr(runtime_mod, "send_notification", notify)
-    runtime.memory.add_reminder(0.0, "Take the pizza out")
+def test_save_session_respects_memory_consent(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    """With memory switched off nothing is summarised."""
+    runtime = _runtime(tmp_path)
+    runtime.identity.memory_consent = False
+    summarize = MagicMock()
+    monkeypatch.setattr(runtime_mod, "summarize_session", summarize)
+    runtime.journal.add("user", "secret")
+    runtime.journal.add("assistant", "ok")
 
-    await runtime._deliver_due_reminders()
-    await runtime._deliver_due_reminders()
+    runtime.save_session("test")
 
-    runtime.say_event.assert_awaited_once()
-    assert "Take the pizza out" in runtime.say_event.await_args.args[0]
-    notify.assert_awaited_once()
+    summarize.assert_not_called()
+    assert runtime.memory.episodes() == []
 
 
-@pytest.mark.asyncio
-async def test_due_reminder_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A reminder falling due while dormant wakes the droid."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.stream.is_dormant = True  # type: ignore[union-attr]
-    runtime.wake = AsyncMock()  # type: ignore[method-assign]
-    runtime.memory.add_reminder(0.0, "Stand-up meeting")
+def test_a_failed_summary_never_raises(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    """The summariser runs in the background; an LLM error is logged, not raised."""
+    runtime = _runtime(tmp_path)
 
-    await runtime.tick()
+    def boom(*_args: object) -> SessionSummary:
+        raise RuntimeError("LLM down")
 
-    runtime.wake.assert_awaited_once_with("reminder")
+    monkeypatch.setattr(runtime_mod, "summarize_session", boom)
+    runtime.journal.add("user", "hi")
+    runtime.journal.add("assistant", "hello")
 
+    runtime.save_session("test")
 
-@pytest.mark.asyncio
-async def test_due_reminder_waits_for_session(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A just-due reminder waits while the session is still connecting."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
-    runtime.handler = MagicMock(_is_connected=MagicMock(return_value=False))
-    runtime.memory.add_reminder(time.time() - 5, "Stretch")
-
-    await runtime._deliver_due_reminders()
-
-    runtime.say_event.assert_not_awaited()
-    assert len(runtime.memory.pending_reminders()) == 1
+    assert runtime.memory.episodes() == []
 
 
-@pytest.mark.asyncio
-async def test_music_starts_a_dance_and_silence_stops_it(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Music makes an idle, activated droid dance; when it stops, the dance stops."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.identity.activated = True
-    runtime.handler = MagicMock(last_activity_time=0.0)
-    runtime._dance_tool = AsyncMock()  # type: ignore[method-assign]
-    runtime._stop_dance_tool = AsyncMock()  # type: ignore[method-assign]
-
-    await runtime._react_to_sound(SoundEvent("music_started", 0.6))
-    await runtime._react_to_sound(SoundEvent("music_stopped", 0.0))
-
-    runtime._dance_tool.assert_awaited_once()
-    runtime._stop_dance_tool.assert_awaited_once()
+def test_start_writes_the_update_health_beacon(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    """An update waits for this beacon from the new version; without it, it rolls back."""
+    monkeypatch.setenv("DROID_AUTOSTART", "0")
+    runtime = DroidRuntime(MagicMock(), tmp_path)
+    runtime.start()
+    try:
+        assert (runtime.data_dir / HEALTH_FILENAME).exists()
+    finally:
+        runtime._stop.set()
 
 
-@pytest.mark.asyncio
-async def test_cat_reaction_has_cooldown_and_counts_visits(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The cat gets one greeting per cooldown, and visits are counted for the diary."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.identity.activated = True
-    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
-
-    await runtime._react_to_sound(SoundEvent("meow", 0.8))
-    await runtime._react_to_sound(SoundEvent("meow", 0.8))
-
-    runtime.say_event.assert_awaited_once()
-    assert "meowing" in runtime.say_event.await_args.args[0]
-    assert runtime.memory.get_state(f"cat_visits:{datetime.now():%Y-%m-%d}") == "1"
-
-
-def test_cat_is_not_a_person(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A cat in view does not keep the droid awake or lock memories away."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.presence = MagicMock()
-    runtime.presence.tracker.present.return_value = ["cat"]
-
-    assert runtime.people_in_view() == [] and runtime.someone_present() is False
-    assert runtime.owner_access_allowed() == (True, "")
-
-
-def test_voice_fx_is_installed_on_the_stream(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """With voice FX on, the stream's output filter is the droid filter."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    chunk = np.full(800, 0.1, dtype=np.float32)
-
-    filtered = runtime.stream.output_filter(16000, chunk)  # type: ignore[union-attr]
-
-    assert filtered.shape == chunk.shape and not np.allclose(filtered, chunk)
-
-
-def test_update_check_launches_helper_for_new_revision(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A newer Space revision starts the detached helper with the previous revision for rollback."""
-    runtime = _runtime(tmp_path, monkeypatch)
+def _update_runtime(tmp_path) -> DroidRuntime:  # noqa: ANN001
+    runtime = _runtime(tmp_path)
     runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
     runtime.app_name = "droid_app"
     runtime.deps.reachy_mini.client.host, runtime.deps.reachy_mini.client.port = "localhost", 8000
+    return runtime
+
+
+def test_update_check_launches_helper_for_new_revision(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    """A newer Space revision starts the detached helper with the previous revision for rollback."""
+    runtime = _update_runtime(tmp_path)
     save_update_state(runtime.data_dir, UpdateState(installed_revision="old-sha"))
     monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "new-sha")
     monkeypatch.setattr(runtime_mod, "installed_revision", lambda *_args: None)
     launch = MagicMock()
     monkeypatch.setattr(runtime_mod, "launch_update_helper", launch)
 
-    result = runtime.check_for_update(force=True)
+    result = runtime.check_for_update()
 
     args = launch.call_args.args[0]
     assert result.startswith("Installing") and args["revision"] == "new-sha" and args["previous"] == "old-sha"
-    assert args["daemon_url"] == "http://localhost:8000"
-    assert args["boot_dormant"] == "0"  # asked for while awake: restart awake
-    assert runtime.check_for_update() == "Checked recently."
-
-
-def test_update_check_trusts_the_installed_snapshot_over_stale_state(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A daemon reinstall leaves the saved revision stale; pip's record decides what is installed."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
-    runtime.app_name = "droid_app"
-    runtime.deps.reachy_mini.client.host, runtime.deps.reachy_mini.client.port = "localhost", 8000
-    save_update_state(runtime.data_dir, UpdateState(installed_revision="sha-3"))  # recorded but never installed
-    monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "sha-3")
-    monkeypatch.setattr(runtime_mod, "installed_revision", lambda *_args: "sha-1")
-    launch = MagicMock()
-    monkeypatch.setattr(runtime_mod, "launch_update_helper", launch)
-
-    assert runtime.check_for_update(force=True).startswith("Installing")
-    assert launch.call_args.args[0]["previous"] == "sha-1"
-
-
-def test_update_check_installs_when_the_installed_revision_is_unknown(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """With no record at all, the button installs the latest instead of assuming it is already there."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
-    runtime.app_name = "droid_app"
-    runtime.deps.reachy_mini.client.host, runtime.deps.reachy_mini.client.port = "localhost", 8000
-    monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "sha-1")
-    monkeypatch.setattr(runtime_mod, "installed_revision", lambda *_args: None)
-    launch = MagicMock()
-    monkeypatch.setattr(runtime_mod, "launch_update_helper", launch)
-
-    assert runtime.check_for_update(force=True).startswith("Installing")
-    assert launch.call_args.args[0]["revision"] == "sha-1"
+    assert args["daemon_url"] == "http://localhost:8000" and args["boot_dormant"] == "0"
 
 
 def test_update_check_reports_up_to_date_from_the_installed_snapshot(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,  # noqa: ANN001
 ) -> None:
     """When pip's record matches the Space, nothing is installed."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.settings = dataclasses.replace(runtime.settings, update_space="owner/droid")
-    runtime.app_name = "droid_app"
+    runtime = _update_runtime(tmp_path)
     monkeypatch.setattr(runtime_mod, "latest_revision", lambda *_args: "sha-2")
     monkeypatch.setattr(runtime_mod, "installed_revision", lambda *_args: "sha-2")
+    launch = MagicMock()
+    monkeypatch.setattr(runtime_mod, "launch_update_helper", launch)
 
-    assert runtime.check_for_update(force=True) == "Already up to date."
+    assert runtime.check_for_update() == "Already up to date."
     assert load_update_state(runtime.data_dir).installed_revision == "sha-2"
+    launch.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_upgrade_is_announced_once_on_wake(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """After an update, the next wake announces the changes, then clears them."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    monkeypatch.setattr(runtime_mod.asyncio, "sleep", AsyncMock())
-    runtime.say_event = AsyncMock(return_value=True)  # type: ignore[method-assign]
-    save_update_state(runtime.data_dir, UpdateState(announce=["Add train announcements"]))
-
-    await runtime._announce_upgrade("wake")
-    await runtime._announce_upgrade("wake")
-
-    runtime.say_event.assert_awaited_once()
-    assert "train announcements" in runtime.say_event.await_args.args[0]
-
-
-def test_antenna_flick_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """While dormant, flicking an antenna requests a wake-up; the first readings after sleeping are ignored."""
-    monkeypatch.setattr(runtime_mod, "_ANTENNA_POLL_S", 0.005)
-    monkeypatch.setattr(runtime_mod, "_ANTENNA_SETTLE_S", 0.02)
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.stream.is_dormant = True  # type: ignore[union-attr]
-    readings = iter([(-0.17, 0.17)] * 20 + [(-0.17, 0.6)] * 200)
-    runtime.deps.reachy_mini.get_current_joint_positions.side_effect = lambda: ([0.0] * 7, list(next(readings)))
-    woke = threading.Event()
-    runtime.request_wake = MagicMock(side_effect=lambda reason: woke.set())  # type: ignore[method-assign]
-
-    watcher = threading.Thread(target=runtime._watch_touch, daemon=True)
-    watcher.start()
-    try:
-        assert woke.wait(2.0)
-    finally:
-        runtime.stop()
-        watcher.join(1.0)
-    runtime.request_wake.assert_called_once_with("antenna")
-
-
-def test_head_scratch_wakes_dormant_droid(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """While dormant, a sustained jiggle of the head IMU requests a wake-up."""
-    monkeypatch.setattr(runtime_mod, "_ANTENNA_POLL_S", 0.005)
-    monkeypatch.setattr(runtime_mod, "_ANTENNA_SETTLE_S", 0.02)
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.settings = dataclasses.replace(runtime.settings, antenna_wake=False, head_scratch_wake=True)
-    runtime.stream.is_dormant = True  # type: ignore[union-attr]
-    still = {"gyroscope": [0.0, 0.0, 0.0], "accelerometer": [0.0, 0.0, 9.81]}
-    scratching = {"gyroscope": [0.2, 0.1, 0.0], "accelerometer": [0.0, 0.0, 9.81]}
-    readings = iter([still] * 10 + [scratching] * 200)
-    type(runtime.deps.reachy_mini).imu = property(lambda self: next(readings))
-    woke = threading.Event()
-    runtime.request_wake = MagicMock(side_effect=lambda reason: woke.set())  # type: ignore[method-assign]
-
-    watcher = threading.Thread(target=runtime._watch_touch, daemon=True)
-    watcher.start()
-    try:
-        assert woke.wait(2.0)
-    finally:
-        runtime.stop()
-        watcher.join(1.0)
-    runtime.request_wake.assert_called_once_with("head scratch")
-    runtime.deps.reachy_mini.get_current_joint_positions.assert_not_called()
-
-
-def test_presence_interval_backs_off(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The camera loop looks less often while dormant or while someone is already in view."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.settings = dataclasses.replace(runtime.settings, presence_interval_s=2.0)
-    runtime.presence = MagicMock()
-    runtime.presence.tracker.present.return_value = []
-
-    assert runtime._presence_interval_s() == 2.0
-    runtime.presence.tracker.present.return_value = ["Pasha"]
-    assert runtime._presence_interval_s() == 3.0
-
-
-@pytest.mark.asyncio
-async def test_sound_senses_can_be_switched_off(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """DROID_LISTEN_FOR_SOUNDS=0 skips loading the sound classifier entirely."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.settings = dataclasses.replace(runtime.settings, listen_for_sounds=False)
-
-    runtime._listen_for_sounds(np.zeros(1600, dtype=np.float32))
-
-    assert runtime._sound_loading is False
-
-
-def test_finish_activation_button_activates_with_defaults(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The control page can finish activation early; stages not done keep their defaults."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.submit = MagicMock(side_effect=lambda coro: (coro.close(), True)[1])  # type: ignore[method-assign]
-    monkeypatch.setattr(runtime_mod, "fetch_day_review", MagicMock(return_value=(None, "no review for today yet")))
-    app = FastAPI()
-    register_droid_routes(app, runtime)
-    client = TestClient(app)
-
-    response = client.post("/droid/api/finish-activation")
-
-    assert response.status_code == 200 and "Activated" in response.json()["status"]
-    runtime.submit.assert_called_once()
-    runtime.identity.activated = True
-    assert client.post("/droid/api/finish-activation").json() == {"status": "Already activated."}
-
-
-def test_updates_default_to_the_k3_space_on_demand_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Updates come from Polkat/k3-droid, and only when asked for until auto-update is switched on."""
-    monkeypatch.delenv("DROID_UPDATE_SPACE", raising=False)
-    monkeypatch.delenv("DROID_AUTO_UPDATE", raising=False)
-    settings = runtime_mod.DroidSettings.from_env()
-    assert settings.update_space == "Polkat/k3-droid"
-    assert settings.auto_update is False
-
-
-@pytest.mark.asyncio
-async def test_system_events_carry_the_private_instruction_rule(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every event tells the model to act on it in the owner's language instead of reading it out."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.identity.language = "Russian"
-    runtime.handler = MagicMock(_is_connected=MagicMock(return_value=True), say=AsyncMock())
-
-    assert await runtime.say_event("[SYSTEM EVENT] Pasha is in view. Greet them briefly.")
-
-    sent = runtime.handler.say.await_args.args[0]
-    assert sent.startswith("[SYSTEM EVENT] Pasha is in view.")
-    assert "do not read, translate" in sent and "in Russian" in sent
-
-
-def test_control_page_turns_the_base_and_reports_its_angle(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The Base buttons turn without the conversation, and Status shows commanded versus measured yaw."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    monkeypatch.setattr(runtime_mod, "fetch_day_review", MagicMock(return_value=(None, "no review for today yet")))
-    manager = runtime.deps.movement_manager
-    manager.body_heading_target.return_value = 0.0
-    manager.turn_body.side_effect = lambda heading, duration: heading
-    manager.get_status.return_value = {"last_commanded_pose": {"body_yaw": np.deg2rad(45)}}
-    manager.head_tracking_enabled.return_value = False
-    runtime.deps.reachy_mini.get_current_joint_positions.return_value = ([0.0] * 7, [0.0, 0.0])
-    app = FastAPI()
-    register_droid_routes(app, runtime)
-    client = TestClient(app)
-
-    turned = client.post("/droid/api/turn/left").json()
-    status = client.get("/droid/api/status").json()
-
-    assert turned["status"] == "turning to 45 degrees from the starting direction"
-    manager.set_head_tracking.assert_called_with(False)
-    assert status["base"] == "commanded 45°, measured 0°, face tracking off"
-    assert client.post("/droid/api/turn/up").status_code == 404
-
-
-def test_restore_motors_clears_stuck_moves_and_wakes_the_body(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_restore_motors_clears_stuck_moves_and_wakes_the_body(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     """Restore motors stops daemon moves still listed as running, then turns torque on and restarts movement."""
-    runtime = _runtime(tmp_path, monkeypatch)
+    runtime = _runtime(tmp_path)
     calls: list[tuple[str, str]] = []
 
     def fake_daemon(robot, path, method="GET", payload=None):  # noqa: ANN001, ANN202
@@ -537,72 +159,17 @@ def test_restore_motors_clears_stuck_moves_and_wakes_the_body(tmp_path, monkeypa
     assert result.startswith("Motors restored")
     assert ("POST", "/api/move/stop") in calls
     runtime.deps.reachy_mini.enable_motors.assert_called_once_with()
-    runtime.deps.reachy_mini.goto_target.assert_called_once()
     runtime.deps.reachy_mini.wake_up.assert_not_called()  # its sound can leave an open session silent
     manager.stop.assert_called_once_with(reset_to_neutral=False)
     manager.start.assert_called_once_with()
 
 
-def test_control_page_reports_and_sets_the_speaker_volume(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A muted speaker shows in Status; the page can play the robot's test sound and set the volume."""
-    from k3_droid.droid import web as web_mod
-
-    runtime = _runtime(tmp_path, monkeypatch)
-    monkeypatch.setattr(runtime_mod, "fetch_day_review", MagicMock(return_value=(None, "no review for today yet")))
-    calls: list[tuple[str, str, object]] = []
-
-    def fake_daemon(robot, path, method="GET", payload=None):  # noqa: ANN001, ANN202
-        calls.append((method, path, payload))
-        return {"volume": 0} if path == "/api/volume/current" else {"message": "Test sound played"}
-
-    monkeypatch.setattr(web_mod, "daemon_request", fake_daemon)
-    app = FastAPI()
-    register_droid_routes(app, runtime)
-    client = TestClient(app)
-
-    assert client.get("/droid/api/status").json()["speaker"] == "volume 0% (muted: raise it)"
-    assert "Test sound played" in client.post("/droid/api/test-sound").json()["status"]
-    assert client.post("/droid/api/volume/70").json() == {"status": "Speaker volume set to 70%."}
-    assert ("POST", "/api/volume/set", {"volume": 70}) in calls
-    assert client.post("/droid/api/volume/150").status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_motor_watchdog_switches_limp_motors_back_on_while_awake(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Awake with the motors off, the watchdog powers them up quietly; asleep or enabled it leaves them alone."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.deps.movement_manager.is_running.return_value = True
-    state = {"mode": "disabled"}
-    monkeypatch.setattr(runtime_mod, "robot_motor_state", lambda robot: (state["mode"], False))
-    power_up = MagicMock(return_value=True)
-    monkeypatch.setattr(runtime_mod, "power_up_quietly", power_up)
-
-    await runtime._watch_motors()
-    assert power_up.call_count == 1 and runtime.motor_restores == 1
-    assert "motors were disabled; switched back on" in runtime.motor_restore_note
-
-    await runtime._watch_motors()  # within the check interval: nothing new
-    assert power_up.call_count == 1
-
-    runtime._last_motor_check = 0.0
-    state["mode"] = "enabled"
-    await runtime._watch_motors()
-    assert power_up.call_count == 1
-
-    runtime._last_motor_check = 0.0
-    state["mode"] = "disabled"
-    runtime.deps.movement_manager.is_running.return_value = False  # asleep on purpose
-    await runtime._watch_motors()
-    assert power_up.call_count == 1
-
-
 def test_restore_motors_restarts_movement_even_when_a_robot_call_fails(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,  # noqa: ANN001
 ) -> None:
-    """A dropped link mid-restore must not leave the control loop stopped (it showed Internal Server Error)."""
-    runtime = _runtime(tmp_path, monkeypatch)
+    """A dropped link mid-restore must not leave the control loop stopped."""
+    runtime = _runtime(tmp_path)
     monkeypatch.setattr(runtime_mod, "daemon_request", lambda *args, **kwargs: [])
     runtime.deps.reachy_mini.enable_wobbling.side_effect = ConnectionError("Lost connection with the server.")
 
@@ -612,49 +179,23 @@ def test_restore_motors_restarts_movement_even_when_a_robot_call_fails(
     runtime.deps.movement_manager.start.assert_called_once_with()
 
 
-@pytest.mark.asyncio
-async def test_connection_watchdog_restarts_the_app_after_a_lasting_drop(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The SDK never reconnects, so a link down for 15 s restarts the app, at most once per cooldown."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    clock = {"now": 1000.0}
-    monkeypatch.setattr(runtime_mod.time, "monotonic", lambda: clock["now"])
-    runtime.deps.reachy_mini.client._is_alive = False
-    runtime.restart_app = MagicMock(return_value="restarting")  # type: ignore[method-assign]
+def test_control_page_reports_status_memories_and_turns(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    """The control page shows status and memories and turns the base without the conversation."""
+    runtime = _runtime(tmp_path)
+    runtime.memory.remember("Pasha likes tea", "Pasha")
+    manager = runtime.deps.movement_manager
+    manager.is_running.return_value = True
+    manager.body_heading_target.return_value = 0.0
+    manager.turn_body.side_effect = lambda heading, duration: heading
+    app = FastAPI()
+    register_droid_routes(app, runtime)
+    client = TestClient(app)
 
-    await runtime._watch_connection()
-    assert runtime.connection_lost_since == 1000.0 and "lost at" in runtime.connection_note
-    clock["now"] += 10.0
-    await runtime._watch_connection()
-    runtime.restart_app.assert_not_called()
-    clock["now"] += 6.0
-    await runtime._watch_connection()
-    runtime.restart_app.assert_called_once_with()
-    clock["now"] += 60.0
-    await runtime._watch_connection()
-    runtime.restart_app.assert_called_once_with()  # cooldown
+    status = client.get("/droid/api/status").json()
+    memories = client.get("/droid/api/memories").json()
+    turned = client.post("/droid/api/turn/left").json()
 
-    runtime.deps.reachy_mini.client._is_alive = True
-    await runtime._watch_connection()
-    assert runtime.connection_lost_since is None
-
-
-@pytest.mark.asyncio
-async def test_droid_answers_only_speech_meant_for_it(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Automatic replies are off; the runtime asks for a reply only when addressed (here, two people in view)."""
-    runtime = _runtime(tmp_path, monkeypatch)
-    runtime.identity.activated = True
-    runtime.people_in_view = MagicMock(return_value=["Pasha", "stranger"])  # type: ignore[method-assign]
-    handler = MagicMock(respond=AsyncMock())
-    runtime.attach(handler)
-    listener = handler.set_conversation_listener.call_args.args[0]
-    assert handler.auto_respond is False
-
-    listener(ConversationEvent("user_transcript", "Ты купила хлеб?"))
-    await asyncio.sleep(0)
-    handler.respond.assert_not_awaited()
-
-    listener(ConversationEvent("user_transcript", "Кей-три, а ты что думаешь?"))
-    await asyncio.sleep(0)
-    handler.respond.assert_awaited_once()
+    assert status["droid_name"] == "K3-L0" and status["movement"] == "running" and status["memory"] == "on"
+    assert memories["facts"][0]["text"] == "Pasha likes tea"
+    assert turned["status"] == "turning to 45 degrees from the starting direction"
+    assert client.post("/droid/api/turn/up").status_code == 404

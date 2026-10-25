@@ -35,49 +35,25 @@
   <section>
     <h2>Status</h2>
     <dl id="status"></dl>
-    <div>
-      <button data-post="/droid/api/wake">Wake up</button>
-      <button class="secondary" data-post="/droid/api/sleep">Go dormant</button>
-    </div>
-  </section>
-
-  <section>
-    <h2>Known faces</h2>
-    <p>Only face embeddings are stored, never pictures.</p>
-    <ul id="faces"></ul>
   </section>
 
   <section>
     <h2>Memories</h2>
     <p>Everything the droid keeps is text. Delete anything you do not want it to remember.</p>
     <h3>Facts</h3><ul id="facts"></ul>
-    <h3>Recent sessions</h3><ul id="episodes"></ul>
-    <h3>Reminders</h3><ul id="reminders"></ul>
-    <h3>Diary</h3><ul id="diary"></ul>
+    <h3>Recent conversations</h3><ul id="episodes"></ul>
   </section>
 
   <section>
-    <h2>Base</h2>
-    <p>If nothing moves, check the Motors row: it should say "enabled". Restore motors switches them back on.
-      Turn the base directly, without the conversation. Face tracking switches off so the droid keeps facing
-      the new direction. The Base row in Status shows the commanded and measured angle.</p>
+    <h2>Robot</h2>
+    <p>If nothing moves, Restore motors switches them back on. If the droid lost its voice, Restart app.</p>
     <button data-post="/droid/api/restore-motors"
-      data-confirm="Stop any stuck move, switch the motors on and move the head back to neutral?">Restore motors</button>
-    <button class="secondary" data-post="/droid/api/test-sound">Robot test sound</button>
-    <button class="secondary" data-post="/droid/api/volume/70">Speaker volume 70%</button>
+      data-confirm="Switch the motors on and move the head back to neutral?">Restore motors</button>
     <button class="secondary" data-post="/droid/api/restart-app"
-      data-confirm="Restart the app? Use it if the droid lost its voice; it is back in about half a minute.">Restart app</button>
+      data-confirm="Restart the app? It is back in about half a minute.">Restart app</button>
     <button class="secondary" data-post="/droid/api/turn/left">Turn left 45°</button>
     <button class="secondary" data-post="/droid/api/turn/home">Face front</button>
     <button class="secondary" data-post="/droid/api/turn/right">Turn right 45°</button>
-  </section>
-
-  <section>
-    <h2>Activation</h2>
-    <p>Finish activation now and keep the defaults for the stages not done yet (Russian, dry humour, brief
-      replies, memory on). You can change any of them later by asking the droid to redo a stage.</p>
-    <button class="secondary" data-post="/droid/api/finish-activation"
-      data-confirm="Finish activation now with default answers for the remaining stages?">Finish activation</button>
   </section>
 
   <section>
@@ -85,35 +61,20 @@
     <p>Installs the latest version from the Hugging Face Space. The new version must report healthy within five
       minutes, or the previous one is reinstalled.</p>
     <button class="secondary" data-post="/droid/api/update-now"
-      data-confirm="Check for an upgrade now? If one exists the droid restarts to install it.">Check for upgrade now</button>
+      data-confirm="Check for an update now? If one exists the droid restarts to install it.">Check for update now</button>
   </section>
-
-  <section>
-    <h2>Factory reset</h2>
-    <p>Forgets the droid's name, settings, faces and memories, and starts the activation protocol again.</p>
-    <button class="danger" data-post="/droid/api/factory-reset"
-      data-confirm="Erase the droid's identity, faces and memories and restart activation?">Factory reset</button>
-  </section>
-
-  <div id="extra-sections"></div>
 </main>
 <script>
   const message = document.getElementById("message");
   const labels = {
-    droid_name: "Designation", owner_name: "Owner", activated: "Activated", dormant: "State",
-    activation_stage: "Activation stage", in_view: "In view",
-    notifications: "Phone notifications",
-    mood: "Mood", face_enrolled: "Owner face enrolled", update: "Software", upgrade_requests: "Upgrade requests", day_review: "Day review", movement: "Movement", connection: "Robot connection", load: "Robot load", motors: "Motors", speaker: "Speaker", motor_watchdog: "Motor watchdog", movement_error: "Last movement error", base: "Base",
+    droid_name: "Designation", owner_name: "Owner", memory: "Memory", movement: "Movement",
+    day_review: "Day review", update: "Software",
   };
 
   function show(text) { message.textContent = text; }
 
-  async function call(path, body) {
-    const response = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+  async function call(path) {
+    const response = await fetch(path, { method: "POST" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || response.statusText);
     return payload;
@@ -125,34 +86,11 @@
     list.replaceChildren();
     for (const [key, label] of Object.entries(labels)) {
       if (!(key in status)) continue;
-      let value = status[key];
-      const dd = document.createElement("dd");
-      if (key === "dormant") {
-        value = value ? "dormant" : "awake";
-        dd.className = value === "awake" ? "state-awake" : "state-dormant";
-      } else if (typeof value === "boolean") {
-        value = value ? "yes" : "no";
-      }
       const dt = document.createElement("dt");
       dt.textContent = label;
-      dd.textContent = value === "" || value === null ? "—" : value;
+      const dd = document.createElement("dd");
+      dd.textContent = status[key] === "" || status[key] === null ? "—" : status[key];
       list.append(dt, dd);
-    }
-  }
-
-  function renderFaces(names) {
-    const list = document.getElementById("faces");
-    list.replaceChildren();
-    if (!names.length) list.append(Object.assign(document.createElement("li"), { textContent: "None yet." }));
-    for (const name of names) {
-      const item = document.createElement("li");
-      const forget = document.createElement("button");
-      forget.className = "secondary";
-      forget.textContent = "Forget";
-      forget.dataset.post = `/droid/api/forget-face/${encodeURIComponent(name)}`;
-      forget.dataset.confirm = `Forget ${name}'s face?`;
-      item.append(`${name} `, forget);
-      list.append(item);
     }
   }
 
@@ -163,14 +101,12 @@
     for (const item of items) {
       const li = document.createElement("li");
       li.append(format(item) + " ");
-      if (deletePath) {
-        const button = document.createElement("button");
-        button.className = "secondary";
-        button.textContent = "Delete";
-        button.dataset.post = deletePath(item);
-        button.dataset.confirm = "Delete this memory?";
-        li.append(button);
-      }
+      const button = document.createElement("button");
+      button.className = "secondary";
+      button.textContent = "Delete";
+      button.dataset.post = deletePath(item);
+      button.dataset.confirm = "Delete this memory?";
+      li.append(button);
       list.append(li);
     }
   }
@@ -180,8 +116,6 @@
       const memories = await (await fetch("/droid/api/memories")).json();
       renderList("facts", memories.facts, (f) => (f.subject ? `${f.subject}: ` : "") + f.text, (f) => `/droid/api/forget-fact/${f.id}`);
       renderList("episodes", memories.episodes, (e) => `${e.when}: ${e.text}`, (e) => `/droid/api/forget-episode/${e.id}`);
-      renderList("reminders", memories.reminders, (r) => `${r.when}: ${r.text}`);
-      renderList("diary", memories.diary, (d) => `${d.day}: ${d.text}`);
     } catch (error) {
       show(`Cannot load memories: ${error.message}`);
     }
@@ -189,10 +123,7 @@
 
   async function refresh() {
     try {
-      const response = await fetch("/droid/api/status");
-      const status = await response.json();
-      render(status);
-      renderFaces(status.known_faces || []);
+      render(await (await fetch("/droid/api/status")).json());
     } catch (error) {
       show(`Cannot reach the droid: ${error.message}`);
     }
@@ -214,8 +145,7 @@
 
   refresh();
   refreshMemories();
-  setInterval(refresh, 3000);
-  setInterval(refreshMemories, 30000);
+  setInterval(refresh, 10000);
 </script>
 </body>
 </html>

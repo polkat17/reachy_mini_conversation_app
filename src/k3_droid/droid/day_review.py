@@ -40,13 +40,3 @@ def fetch_day_review(dataset: str, token: str | None, today: date) -> tuple[dict
     if review.get("date") != today.isoformat():
         return None, f"no review for today yet (latest is for {review.get('date') or 'an unknown day'})"
     return review, f"today's review loaded from {dataset}"
-
-
-def briefing_line(review: dict[str, Any]) -> str:
-    """Condense a review into one prompt line for the spoken morning briefing."""
-    summary = str(review.get("spoken_summary") or "").strip()
-    priorities = [
-        str(item.get("title") or "").strip() for item in review.get("priorities") or [] if isinstance(item, dict)
-    ]
-    top = "; ".join(title for title in priorities[:3] if title)
-    return summary + (f" Top priorities: {top}." if top else "")

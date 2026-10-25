@@ -1,7 +1,6 @@
 import re
 import hashlib
 from pathlib import Path
-from datetime import datetime
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -12,9 +11,7 @@ from k3_droid.droid import context as context_mod
 from k3_droid.tools.recall import Recall
 from k3_droid.droid.runtime import DroidRuntime
 from k3_droid.tools.memorize import Memorize
-from k3_droid.tools.reminder import Reminder, due_time
 from k3_droid.tools.core_tools import ToolDependencies
-from k3_droid.tools.read_diary import ReadDiary
 from k3_droid.tools.forget_memory import ForgetMemory
 from k3_droid.tools.list_memories import ListMemories
 
@@ -30,11 +27,10 @@ class _WordEmbedder:
 
 @pytest.fixture
 def deps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ToolDependencies:
-    """Dependencies with an activated, consenting droid and a word-hash embedder."""
+    """Dependencies with a consenting droid and a word-hash embedder."""
     monkeypatch.setattr(context_mod, "TextEmbedder", _WordEmbedder)
     deps = ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock(), instance_path=tmp_path)
     droid = DroidRuntime(deps, tmp_path)
-    droid.identity.activated = True
     droid.identity.memory_consent = True
     deps.droid = droid
     return deps
@@ -64,23 +60,6 @@ async def test_memorize_respects_consent(deps: ToolDependencies) -> None:
 
 
 @pytest.mark.asyncio
-async def test_memories_stay_private_from_strangers(deps: ToolDependencies) -> None:
-    """With only a stranger in view, memory tools refuse to share."""
-    droid = deps.droid
-    assert droid is not None
-    droid.presence = MagicMock()
-    droid.presence.tracker.present.return_value = ["stranger"]
-
-    for result in (
-        await Recall()(deps, query="anything"),
-        await ListMemories()(deps),
-        await ForgetMemory()(deps, query="anything"),
-        await ReadDiary()(deps),
-    ):
-        assert "stays private" in result["error"]
-
-
-@pytest.mark.asyncio
 async def test_forget_needs_confirmation(deps: ToolDependencies) -> None:
     """The first call only lists matches; deletion happens with confirmed ids."""
     await Memorize()(deps, text="Pasha is allergic to peanuts", subject="Pasha")
@@ -93,37 +72,3 @@ async def test_forget_needs_confirmation(deps: ToolDependencies) -> None:
 
     assert deleted == {"status": "deleted 1 memories"}
     assert [fact.subject for fact in deps.droid.memory.facts()] == ["Miso"]
-
-
-def test_due_time_parsing() -> None:
-    """Timers, clock times (rolling to tomorrow) and full dates resolve; nonsense does not."""
-    now = datetime(2026, 9, 27, 20, 0)
-
-    assert due_time(15, None, now) == datetime(2026, 9, 27, 20, 15)
-    assert due_time(None, "21:30", now) == datetime(2026, 9, 27, 21, 30)
-    assert due_time(None, "07:00", now) == datetime(2026, 9, 28, 7, 0)
-    assert due_time(None, "2026-10-02 09:00", now) == datetime(2026, 10, 2, 9, 0)
-    assert due_time(None, "soonish", now) is None
-
-
-@pytest.mark.asyncio
-async def test_reminder_set_list_cancel(deps: ToolDependencies) -> None:
-    """Reminders round-trip through the tool."""
-    created = await Reminder()(deps, action="set", text="Pizza out of the oven", in_minutes=12)
-    listed = await Reminder()(deps, action="list")
-    cancelled = await Reminder()(deps, action="cancel", id=created["id"])
-
-    assert created["status"] == "set"
-    assert listed["reminders"][0]["text"] == "Pizza out of the oven"
-    assert cancelled == {"status": "cancelled"}
-    assert "error" in await Reminder()(deps, action="set", text="no time given")
-
-
-@pytest.mark.asyncio
-async def test_read_diary(deps: ToolDependencies) -> None:
-    """The latest entry is read when no day is given."""
-    assert deps.droid is not None
-    deps.droid.memory.write_diary("2026-09-26", "Pasha taught me chess.")
-
-    assert (await ReadDiary()(deps))["entry"] == "Pasha taught me chess."
-    assert "error" in await ReadDiary()(deps, day="1999-01-01")

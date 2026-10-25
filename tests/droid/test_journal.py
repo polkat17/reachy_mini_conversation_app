@@ -4,8 +4,7 @@ import pytest
 
 from k3_droid.droid import journal as journal_mod
 from k3_droid.droid.llm import parse_json_object
-from k3_droid.droid.mood import MoodInputs, current_mood
-from k3_droid.droid.journal import SessionJournal, summarize_session, write_diary_entry
+from k3_droid.droid.journal import SessionJournal, summarize_session
 from k3_droid.droid.identity import Identity
 
 
@@ -49,13 +48,6 @@ def test_summary_falls_back_without_model(monkeypatch: pytest.MonkeyPatch) -> No
     assert "sister Anna" in summary.summary and summary.facts == []
 
 
-def test_diary_falls_back_without_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The diary still gets an entry when the model is unavailable."""
-    monkeypatch.setattr(journal_mod, "complete", lambda *_args, **_kwargs: None)
-
-    assert "did not talk" in write_diary_entry(Identity(), [], [])
-
-
 @pytest.mark.parametrize(
     ("text", "expected"),
     [('```json\n{"a": 1}\n```', {"a": 1}), ("no json here", None), ("[1, 2]", None), (None, None)],
@@ -63,19 +55,3 @@ def test_diary_falls_back_without_model(monkeypatch: pytest.MonkeyPatch) -> None
 def test_parse_json_object(text: str | None, expected: object) -> None:
     """JSON objects are pulled out of chatty replies; anything else is None."""
     assert parse_json_object(text) == expected
-
-
-@pytest.mark.parametrize(
-    ("inputs", "label"),
-    [
-        (MoodInputs(72, 0, 0, []), "lonely"),
-        (MoodInputs(1, 1, 3, ["sad", "tired", "happy"]), "protective"),
-        (MoodInputs(0.1, 6, 12, []), "energetic"),
-        (MoodInputs(14, 0, 4, []), "bored"),
-        (MoodInputs(2, 1, 12, []), "content"),
-        (MoodInputs(2, 1, 3, []), "curious"),
-    ],
-)
-def test_moods(inputs: MoodInputs, label: str) -> None:
-    """Mood follows how much the droid has seen its owner, and how they seemed."""
-    assert current_mood(inputs, "Pasha").label == label

@@ -48,8 +48,6 @@ class ConversationHandler(AsyncStreamHandler, ABC):
     _activity_observer: Callable[[str], None] | None = None
     _transcript_observer: Callable[[str, str, bool], None] | None = None
     _conversation_listener: Callable[[ConversationEvent], None] | None = None
-    # False: finished user speech is kept as context but not answered until respond() is called.
-    auto_respond: bool = True
 
     def __init__(self) -> None:
         """Initialize the stream handler and shared idle/activity tracking."""
@@ -177,16 +175,6 @@ class ConversationHandler(AsyncStreamHandler, ABC):
     @abstractmethod
     async def change_voice(self, voice: str) -> str:
         """Change the current voice."""
-        ...
-
-    @abstractmethod
-    async def refresh_instructions(self) -> None:
-        """Push freshly built session instructions to the live session, if one is open."""
-        ...
-
-    @abstractmethod
-    async def respond(self) -> None:
-        """Answer the conversation so far now (used when ``auto_respond`` is off). Raises if no session is open."""
         ...
 
     @abstractmethod

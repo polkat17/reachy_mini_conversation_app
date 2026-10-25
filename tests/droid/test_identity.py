@@ -82,8 +82,6 @@ def test_droid_profile_instructions_start_with_identity(tmp_path: Path, monkeypa
 
 def test_memory_is_on_by_default_and_an_explicit_no_sticks(tmp_path) -> None:
     """Memory defaults to on (also for files saved with the old unanswered "off"), but an answered no is kept."""
-    from k3_droid.droid.activation import apply_answer
-
     droid_dir = tmp_path / "droid"
     droid_dir.mkdir()
     (droid_dir / "core.yaml").write_text("owner_name: Pasha\nmemory_consent: false\n", encoding="utf-8")
@@ -91,6 +89,6 @@ def test_memory_is_on_by_default_and_an_explicit_no_sticks(tmp_path) -> None:
     assert load_identity(tmp_path).memory_consent is True
 
     identity = load_identity(tmp_path)
-    apply_answer("memory_consent", {"consent": False}, identity)
+    identity.memory_consent, identity.memory_consent_answered = False, True
     save_identity(tmp_path, identity)
     assert load_identity(tmp_path).memory_consent is False

@@ -1,11 +1,10 @@
-"""Session journal: the rolling transcript, its end-of-session summary, and the nightly diary entry."""
+"""Session journal: the rolling transcript and its end-of-session summary."""
 
 import time
 from dataclasses import field, dataclass
 
 from k3_droid.droid.llm import complete, parse_json_object
 from k3_droid.droid.identity import Identity
-from k3_droid.droid.memory_store import Episode
 
 
 MAX_TRANSCRIPT_CHARS = 12000
@@ -14,7 +13,7 @@ CHECKPOINT_TURNS = 60
 
 @dataclass
 class SessionJournal:
-    """Text transcript of the current awake period."""
+    """Text transcript of the current conversation."""
 
     started_at: float = field(default_factory=time.time)
     lines: list[tuple[str, str]] = field(default_factory=list)
@@ -82,18 +81,3 @@ def summarize_session(lines: list[tuple[str, str]], identity: Identity, known_fa
         tags=tags,
         facts=facts[:10],
     )
-
-
-def write_diary_entry(identity: Identity, episodes: list[Episode], notes: list[str]) -> str:
-    """Write the droid's diary entry for a day, in its own voice."""
-    material = "\n".join([f"- {episode.summary}" for episode in episodes] + [f"- {note}" for note in notes])
-    if not material:
-        material = f"- {identity.owner_name} did not talk to me today."
-    reply = complete(
-        f"You are {identity.droid_name}, a companion droid from the future with {identity.humour} humour. "
-        "Write tonight's private diary entry: 3 to 5 sentences, first person, past tense, affectionate but deadpan, "
-        f"about your day with {identity.owner_name}. Plain text only.",
-        f"Today's log:\n{material}",
-        max_tokens=300,
-    )
-    return reply or f"Log summary: {' '.join(episode.summary for episode in episodes) or material}"
