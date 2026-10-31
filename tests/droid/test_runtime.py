@@ -199,3 +199,29 @@ def test_control_page_reports_status_memories_and_turns(tmp_path, monkeypatch: p
     assert memories["facts"][0]["text"] == "Pasha likes tea"
     assert turned["status"] == "turning to 45 degrees from the starting direction"
     assert client.post("/droid/api/turn/up").status_code == 404
+
+
+def test_reply_plays_a_fitting_emotion_and_a_request_wins(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    """The droid's own words pick its body language; an explicit request plays exactly what was asked."""
+    runtime = _runtime(tmp_path)
+    played: list[str] = []
+    monkeypatch.setattr(runtime, "_play_emotion", played.append)
+
+    class _InlineThread:
+        def __init__(self, target, args, **_kwargs) -> None:  # noqa: ANN001
+            self._run = lambda: target(*args)
+
+        def start(self) -> None:
+            self._run()
+
+    monkeypatch.setattr(runtime_mod.threading, "Thread", _InlineThread)
+    listener = _listener(runtime)
+
+    listener(ConversationEvent("user_transcript", "Как дела?"))
+    listener(ConversationEvent("assistant_transcript", "Сейчас пятнадцать градусов."))
+    listener(ConversationEvent("user_transcript", "Покажи грусть"))
+    listener(ConversationEvent("assistant_transcript", "Вот так."))
+    listener(ConversationEvent("user_transcript", "Я сдал экзамен!"))
+    listener(ConversationEvent("assistant_transcript", "Поздравляю!"))  # too soon after the last emotion
+
+    assert played == ["sad"]

@@ -1,11 +1,13 @@
 """The droid runtime: a light layer over the conversation that gives it a persistent identity and memory.
 
-It only listens to conversation events. It keeps a transcript of the current conversation and, once the
+It only listens to conversation events. It plays an emotion that fits what the droid says (the model itself only
+talks), keeps a transcript of the current conversation and, once the
 conversation goes quiet (or gets long, or the app stops), summarises it into an episode and durable facts
 with one background LLM call. Nothing here polls the camera, the microphone or the motors.
 """
 
 import time
+import asyncio
 import logging
 import threading
 from typing import Any
@@ -31,6 +33,8 @@ from k3_droid.droid.settings import DroidSettings
 from k3_droid.droid.autostart import current_app_name, ensure_autostart
 from k3_droid.droid.day_review import fetch_day_review
 from k3_droid.tools.core_tools import ToolDependencies
+from k3_droid.tools.play_emotion import PlayEmotion
+from k3_droid.droid.body_language import emotion_for_reply, requested_emotion
 from k3_droid.conversation_handler import ConversationEvent, ConversationHandler
 
 
@@ -39,6 +43,7 @@ logger = logging.getLogger(__name__)
 _QUIET_BEFORE_SUMMARY_S = 5 * 60.0
 _SUMMARY_POLL_S = 30.0
 _DAY_REVIEW_RECHECK_S = 600.0
+_EMOTION_GAP_S = 6.0  # at most one unrequested emotion this often, so the head is not always busy
 
 
 class DroidRuntime:
@@ -60,6 +65,10 @@ class DroidRuntime:
         self._day_review_checked_at: float | None = None
         self.day_review_note = "not checked yet"
         self.app_name: str | None = None
+        self._emotion_tool = PlayEmotion()
+        self._emotion_lock = threading.Lock()
+        self._requested_emotion: str | None = None
+        self._last_emotion_at = float("-inf")
 
     # ---- lifecycle --------------------------------------------------------------
 
@@ -96,6 +105,28 @@ class DroidRuntime:
         self.journal.add("user" if event.kind == "user_transcript" else "assistant", event.text)
         if len(self.journal.lines) >= CHECKPOINT_TURNS:
             threading.Thread(target=self.save_session, args=("long conversation",), daemon=True).start()
+        if event.kind == "user_transcript":
+            self._requested_emotion = requested_emotion(event.text)
+        else:
+            self._react_to_reply(event.text)
+
+    def _react_to_reply(self, reply: str) -> None:
+        """Play the emotion the owner asked for, or one that fits the reply, while the reply is being spoken."""
+        emotion, self._requested_emotion = self._requested_emotion, None
+        now = time.monotonic()
+        if emotion is None:
+            emotion = emotion_for_reply(reply)
+            if emotion is None or now - self._last_emotion_at < _EMOTION_GAP_S:
+                return
+        self._last_emotion_at = now
+        # The first play downloads the emotions library, so keep it off the conversation's event loop.
+        threading.Thread(target=self._play_emotion, args=(emotion,), daemon=True, name="droid-emotion").start()
+
+    def _play_emotion(self, emotion: str) -> None:
+        with self._emotion_lock:
+            result = asyncio.run(self._emotion_tool(self.deps, emotion=emotion))
+        if "error" in result:
+            logger.warning("Could not play emotion %s: %s", emotion, result["error"])
 
     # ---- memory -----------------------------------------------------------------------
 
